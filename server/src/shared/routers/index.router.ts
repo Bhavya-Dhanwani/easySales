@@ -12,6 +12,8 @@ import researchRouter from "../../modules/private/research/research.router.js";
 import integrationsRouter from "../../modules/private/integrations/integrations.router.js";
 import campaignsRouter from "../../modules/private/campaigns/campaigns.router.js";
 import outreachRouter from "../../modules/private/outreach/outreach.router.js";
+import opportunitiesRouter from "../../modules/private/opportunities/opportunities.router.js";
+import previewRouter from "../../modules/public/preview/preview.router.js";
 import authMiddleware from "../middlewares/auth.middleware.js";
 import orgContext from "../tenancy/orgContext.middleware.js";
 import Forbidden from "../errors/Forbidden.error.js";
@@ -23,6 +25,7 @@ const router = express.Router();
 router.use("/health", healthRouter);
 router.use("/auth", authRouter);
 router.use("/webhooks", webhooksRouter);
+router.use("/preview", previewRouter);
 
 // only verified accounts can act on tenant data (the agent sends email on their behalf)
 function requireVerified(req: Request & { user?: { isVerified?: boolean } }, res: Response, next: NextFunction) {
@@ -42,6 +45,7 @@ v1.use("/", researchRouter);
 v1.use("/integrations", integrationsRouter);
 v1.use("/campaigns", campaignsRouter);
 v1.use("/", outreachRouter);
+v1.use("/", opportunitiesRouter);
 router.use("/v1", v1);
 
 // exporting the router

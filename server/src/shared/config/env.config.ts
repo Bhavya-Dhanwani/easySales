@@ -43,6 +43,9 @@ const envSchema = z.object({
     // optional Slack/Discord-compatible webhook for operational alerts
     ALERT_WEBHOOK_URL: z.union([z.literal(""), z.string().url()]).default(""),
 
+    // origin that serves prototype previews; use a separate domain in production (defaults to FRONTEND_URL)
+    PREVIEW_BASE_URL: z.union([z.literal(""), z.string().url()]).default(""),
+
     // run the background worker inside the API process (disable when running `npm run worker` separately)
     RUN_WORKER: booleanFromEnv(true),
 });

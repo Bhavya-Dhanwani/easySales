@@ -31,6 +31,11 @@ export const PolicyConfigSchema = z.object({
         currency: z.string().length(3),
         minimumDealValueMinor: z.number().int().min(0),
         maximumDiscountPercent: z.number().min(0).max(100),
+        // deals above this need a human (enterprise quoting stays manual)
+        maximumDealValueMinor: z.number().int().min(0).default(10_00_000_00),
+        // tax on the discounted subtotal, in basis points (1800 = 18%); 0 when prices are tax-inclusive
+        taxBasisPoints: z.number().int().min(0).max(10000).default(0),
+        proposalValidityDays: z.number().int().min(1).max(180).default(30),
     }),
     proposals: z.object({
         autoSend: z.boolean(),
@@ -38,6 +43,17 @@ export const PolicyConfigSchema = z.object({
     budgets: z.object({
         maxLlmCallsPerDay: z.number().int().min(0).max(100000),
     }),
+    // demo builds: every attempt is charged against these budgets (same currency as pricing)
+    prototypes: z.object({
+        enabled: z.boolean(),
+        // inside budget a qualified opportunity builds without asking; otherwise a human approves
+        autoBuild: z.boolean(),
+        costPerAttemptMinor: z.number().int().min(0).max(1e9),
+        maxAttempts: z.number().int().min(1).max(3),
+        maxPerPrototypeMinor: z.number().int().min(0).max(1e10),
+        monthlyBudgetMinor: z.number().int().min(0).max(1e11),
+        previewDays: z.number().int().min(1).max(30),
+    }).default({ enabled: true, autoBuild: true, costPerAttemptMinor: 50_00, maxAttempts: 2, maxPerPrototypeMinor: 200_00, monthlyBudgetMinor: 5000_00, previewDays: 7 }),
     // data retention (days); enforced daily by the worker
     retention: z.object({
         messageDays: z.number().int().min(30).max(3650),
@@ -61,8 +77,9 @@ export const DEFAULT_POLICY: PolicyConfig = {
         quietHours: { enabled: true, start: "19:00", end: "09:00", timezone: "Asia/Kolkata" },
     },
     qualification: { minimumScore: 70, minimumEvidenceCoverage: 60, reviewScore: 50 },
-    pricing: { currency: "INR", minimumDealValueMinor: 25000_00, maximumDiscountPercent: 10 },
+    pricing: { currency: "INR", minimumDealValueMinor: 25000_00, maximumDiscountPercent: 10, maximumDealValueMinor: 10_00_000_00, taxBasisPoints: 0, proposalValidityDays: 30 },
     proposals: { autoSend: false },
     budgets: { maxLlmCallsPerDay: 500 },
+    prototypes: { enabled: true, autoBuild: true, costPerAttemptMinor: 50_00, maxAttempts: 2, maxPerPrototypeMinor: 200_00, monthlyBudgetMinor: 5000_00, previewDays: 7 },
     retention: { messageDays: 365, auditDays: 730 },
 };

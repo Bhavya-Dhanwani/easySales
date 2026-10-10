@@ -35,6 +35,10 @@ const BusinessProfileSchema = z.object({
     brandVoice: text(500),
     approvedClaims: tags,
     prohibitedClaims: tags,
+    terms: text(8000).optional(),
+    revisionRounds: z.number().int().min(0).max(20).optional(),
+    paymentSchedule: z.array(z.object({ label: text(80).min(1), percent: z.number().int().min(1).max(100) })).min(1).max(6)
+        .refine((s) => s.reduce((a, b) => a + b.percent, 0) === 100, "Payment schedule must add up to 100%").optional(),
     caseStudies: z.array(z.object({ title: text(200), summary: text(1500) })).max(20),
     scoringWeights: z.object(Object.fromEntries(CRITERIA.map((c) => [c.id, z.number().int().min(0).max(100)])) as Record<CriterionId, z.ZodNumber>)
         .refine((w) => Object.values(w).some((v) => v > 0), "At least one criterion needs weight").optional(),

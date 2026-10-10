@@ -36,7 +36,7 @@ const FIXTURES = {
         ],
         recommendedAction: "reply", returnDate: "", reply: "Great to hear, Priya. Would Tuesday or Wednesday work for a 20-minute discovery call?",
     },
-    proposal: { title: "Online booking for Acme Dental", understanding: "Three clinics need online booking and reminders.", approach: ["Booking flow", "SMS reminders"], nextSteps: ["Discovery call", "Kick-off"] },
+    proposal: { title: "Online booking for Acme Dental", understanding: "Three clinics need online booking and reminders.", approach: ["Booking flow", "SMS reminders"], nextSteps: ["Discovery call", "Kick-off"], deliverables: ["Booking flow"], exclusions: [], assumptions: [], milestones: [{ name: "Build", description: "Booking flow" }] },
 };
 
 async function setup() {

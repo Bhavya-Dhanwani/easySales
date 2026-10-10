@@ -8,7 +8,8 @@ import { isSuppressed } from "../policy/policy.service.js";
 import { audit } from "../audit/audit.service.js";
 import { hashPayload } from "../utils/hash.util.js";
 import { messagePayload } from "../outbound/outbound.service.js";
-import { executeApprovedProposal } from "../proposals/proposal.service.js";
+import { executeApprovedProposal, proposalPayload } from "../proposals/proposal.service.js";
+import { decidePrototypeApproval } from "../prototypes/prototype.service.js";
 import NotFound from "../errors/NotFound.error.js";
 import Conflict from "../errors/Conflict.error.js";
 
@@ -73,12 +74,16 @@ export async function decideApproval(
                 message.notBefore = new Date();
                 await message.save();
             }
+        } else if (approval.targetType === "prototype") {
+            await decidePrototypeApproval(organizationId, approval.targetId, approval.payloadHash, true);
         } else {
             const proposal = await Proposal.findOne({ organizationId, _id: approval.targetId, status: "pending_approval" });
             if (!proposal) throw new Conflict("Proposal is no longer awaiting approval");
-            if (hashPayload({ ...approval.payload, body: proposal.body }) !== approval.payloadHash) throw new Conflict("Proposal changed since review");
-            await executeApprovedProposal(organizationId, proposal._id);
+            if (hashPayload(proposalPayload(proposal, String(approval.payload?.to ?? ""))) !== approval.payloadHash) throw new Conflict("Proposal changed since review");
+            await executeApprovedProposal(organizationId, proposal._id, { payloadHash: approval.payloadHash, decidedBy: userId });
         }
+    } else if (approval.targetType === "prototype") {
+        await decidePrototypeApproval(organizationId, approval.targetId, approval.payloadHash, false);
     } else if (approval.targetType === "message") {
         await Message.updateOne({ organizationId, _id: approval.targetId, status: "pending_approval" }, { status: "rejected", error: opts.note || "Rejected by reviewer" });
     } else {

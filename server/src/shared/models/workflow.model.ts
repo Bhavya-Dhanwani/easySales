@@ -2,7 +2,7 @@
 import mongoose from "mongoose";
 import tenantPlugin, { tenantFields } from "../tenancy/tenant.plugin.js";
 
-export const WORKFLOW_TYPES = ["lead.pipeline", "lead.research", "conversation.reply", "conversation.followup", "proposal.generate"] as const;
+export const WORKFLOW_TYPES = ["lead.pipeline", "lead.research", "conversation.reply", "conversation.followup", "proposal.generate", "requirements.extract", "prototype.build"] as const;
 export const WORKFLOW_STATUSES = ["queued", "running", "waiting_approval", "completed", "failed", "cancelled"] as const;
 
 /*
@@ -16,7 +16,7 @@ const workflowSchema = new mongoose.Schema({
 
     type: { type: String, enum: WORKFLOW_TYPES, required: true },
 
-    entityType: { type: String, enum: ["lead", "conversation", "proposal"], required: true },
+    entityType: { type: String, enum: ["lead", "conversation", "proposal", "prototype"], required: true },
 
     entityId: { type: mongoose.Schema.Types.ObjectId, required: true },
 

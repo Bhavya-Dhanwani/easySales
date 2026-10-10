@@ -8,6 +8,10 @@ export const ProposalNarrativeSchema = z.object({
     understanding: z.string().describe("our understanding of their goals, 1 short paragraph"),
     approach: z.array(z.string()).min(2).max(8).describe("scope / approach bullet points"),
     nextSteps: z.array(z.string()).min(1).max(5),
+    deliverables: z.array(z.string().max(200)).min(1).max(12).describe("concrete things the client receives"),
+    exclusions: z.array(z.string().max(200)).max(10).describe("what is explicitly not included"),
+    assumptions: z.array(z.string().max(200)).max(10).describe("what this scope assumes is true"),
+    milestones: z.array(z.object({ name: z.string().max(80), description: z.string().max(240) })).min(1).max(6).describe("delivery phases, without dates or prices"),
 });
 
 /*
@@ -21,6 +25,7 @@ export async function writeProposal(
     conversationSummary: string,
     items: { name: string }[],
     profile: ProfileForPrompt,
+    requirements?: unknown,
 ) {
 
     return runAgent(ctx, "proposal", {
@@ -28,7 +33,8 @@ export async function writeProposal(
         tier: "smart",
         system: `You are the Proposal Agent. Write the narrative sections of a concise, professional proposal.
 ${UNTRUSTED_RULES}
-Rules: do not mention any price, discount, currency or number of days; do not promise anything beyond the listed services and approved claims.
+Rules: do not mention any price, discount, currency, tax, payment terms or number of days; do not promise anything beyond the listed services and approved claims.
+Scope: deliverables only from the selected services; list as exclusions anything requested that the services do not cover; mark unconfirmed requirements as assumptions.
 
 ${businessBrief(profile)}`,
         user: `Client: ${lead.company.name}
@@ -36,7 +42,9 @@ Selected services: ${items.map((i) => i.name).join(", ")}
 
 ${untrusted("discovery-notes", `Needs: ${(lead.requirements?.needs ?? []).join("; ") || "(not captured)"}
 Timeline (as stated): ${lead.requirements?.timeline || "(not stated)"}
-Conversation summary: ${conversationSummary || "(none)"}`)}`,
+Conversation summary: ${conversationSummary || "(none)"}`)}${requirements ? `
+
+${untrusted("requirements", JSON.stringify(requirements))}` : ""}`,
     });
 
 }

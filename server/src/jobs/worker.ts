@@ -8,11 +8,14 @@ import Message from "../shared/models/message.model.js";
 import Conversation from "../shared/models/conversation.model.js";
 import Lead from "../shared/models/lead.model.js";
 import Proposal from "../shared/models/proposal.model.js";
+import Prototype from "../shared/models/prototype.model.js";
 import { getCurrentPolicy, isSuppressed } from "../shared/policy/policy.service.js";
 import { isQuietHours } from "../shared/policy/policy.engine.js";
 import { audit } from "../shared/audit/audit.service.js";
 import { startWorkflow } from "../shared/workflows/workflow.service.js";
-import { generateProposalBody } from "../shared/proposals/proposal.service.js";
+import { expireProposals, generateProposalBody } from "../shared/proposals/proposal.service.js";
+import { buildPrototype, expireStalePreviews } from "../shared/prototypes/prototype.service.js";
+import { runRequirementsExtraction } from "../shared/requirements/requirements.service.js";
 import { proposeOutbound } from "../shared/outbound/outbound.service.js";
 import { getEmailProvider, type EmailProvider } from "../providers/email.provider.js";
 import { followUpStopReason, recordOutboundSent } from "../shared/conversations/followups.service.js";
@@ -115,6 +118,14 @@ async function executeWorkflow(wf: WorkflowDoc) {
         } else if (wf.type === "proposal.generate") {
             await generateProposalBody(wf.organizationId.toString(), wf.entityId.toString(), wf._id.toString(), wf.correlationId);
             await Workflow.updateOne(scope, { status: "completed", lockedUntil: null, currentStep: "done", result: { outcome: "proposal_drafted" } });
+        } else if (wf.type === "requirements.extract") {
+            await Workflow.updateOne(scope, { currentStep: "extract" });
+            const r = await runRequirementsExtraction(wf.organizationId, wf.entityId, wf._id.toString(), wf.correlationId);
+            await Workflow.updateOne(scope, { status: "completed", lockedUntil: null, currentStep: "done", result: { outcome: "requirements_extracted", ...r } });
+        } else if (wf.type === "prototype.build") {
+            await Workflow.updateOne(scope, { currentStep: "build" });
+            const r = await buildPrototype(wf.organizationId, wf.entityId, wf._id.toString(), wf.correlationId);
+            await Workflow.updateOne(scope, { status: "completed", lockedUntil: null, currentStep: "done", result: r });
         } else if (wf.type === "conversation.followup") {
             const result = await runFollowUp(wf);
             await Workflow.updateOne(scope, { status: "completed", lockedUntil: null, currentStep: "done", result });
@@ -132,6 +143,9 @@ async function executeWorkflow(wf: WorkflowDoc) {
             nextRunAt: new Date(Date.now() + 30_000 * 2 ** (wf.attempts - 1)),
         });
         if (giveUp) {
+            if (wf.type === "prototype.build") {
+                await Prototype.updateOne({ organizationId: wf.organizationId, _id: wf.entityId, status: { $in: ["queued", "building", "testing"] } }, { status: "failed", failureCode: err.code ?? "ERROR" });
+            }
             // research that can no longer succeed is visible on the lead, never silently stuck
             if (wf.type === "lead.research" || wf.type === "lead.pipeline") {
                 await Lead.updateOne(
@@ -206,7 +220,7 @@ async function dispatchMessage(msg: InstanceType<typeof Message>) {
         await Message.updateOne(scope, { status: "sent", sentAt: now, providerMessageId, lockedUntil: null, error: null });
         await recordOutboundSent(organizationId, msg, now);
         await Lead.updateOne({ organizationId, _id: msg.leadId, outreachStatus: { $in: ["not_started", "eligible"] } }, { outreachStatus: "active" });
-        if (msg.proposalId) await Proposal.updateOne({ organizationId, _id: msg.proposalId }, { status: "sent" });
+        if (msg.proposalId) await Proposal.updateOne({ organizationId, _id: msg.proposalId, status: "approved" }, { status: "sent", sentAt: new Date() });
         await audit({
             organizationId, actorType: "system", actorId: `email:${provider.name}`, action: "message.sent",
             targetType: "message", targetId: msg._id.toString(), outcome: "success", metadata: { to: msg.to, kind: msg.kind, providerMessageId },
@@ -300,6 +314,8 @@ export async function runOnce({ maxWorkflows = 5, maxMessages = 20, force = fals
         await dispatchMessage(msg);
     }
     await processPendingEvents();
+    await expireStalePreviews();
+    await expireProposals();
     if (force || Date.now() - lastFollowUpScan > 60_000) {
         lastFollowUpScan = Date.now();
         await scheduleFollowUps();

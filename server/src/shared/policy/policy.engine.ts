@@ -33,6 +33,18 @@ export type PolicyAction =
         totalMinor: number;
         discountPercent: number;
         currency: string;
+        // unresolved requirements, stale price book... anything that makes the scope exceptional
+        scopeIssues?: string[];
+    }
+    | {
+        type: "prototype.build";
+        leadQualified: boolean;
+        hasRequirements: boolean;
+        openQuestions: string[];
+        templateApproved: boolean;
+        estimateMinor: number;
+        monthSpentMinor: number;
+        prospectBudgetMinor: number | null;
     }
     | {
         type: "llm.call";
@@ -100,7 +112,23 @@ export function evaluate(action: PolicyAction, policy: PolicyConfig, now: Date =
             if (action.currency !== p.currency) approve.push(`Currency ${action.currency} differs from policy currency ${p.currency}`);
             if (action.totalMinor < p.minimumDealValueMinor) approve.push("Total is below the minimum deal value");
             if (action.discountPercent > p.maximumDiscountPercent) approve.push(`Discount exceeds ${p.maximumDiscountPercent}%`);
+            if (action.totalMinor > p.maximumDealValueMinor) approve.push("Total is above the maximum deal value");
+            for (const issue of action.scopeIssues ?? []) approve.push(issue);
             if (!policy.proposals.autoSend) approve.push("Automatic proposal sending is disabled");
+            break;
+        }
+
+        case "prototype.build": {
+            const b = policy.prototypes;
+            if (!b.enabled) deny.push("Prototype builds are disabled for this organization");
+            if (!action.leadQualified) deny.push("Lead is not qualified");
+            if (!action.hasRequirements) deny.push("No requirements yet: extract or write them first");
+            for (const q of action.openQuestions) deny.push(`Needs clarification: ${q}`);
+            if (!action.templateApproved) deny.push("No approved template for this project type");
+            if (action.monthSpentMinor + action.estimateMinor > b.monthlyBudgetMinor) deny.push("Monthly prototype budget exhausted");
+            if (action.estimateMinor > b.maxPerPrototypeMinor) approve.push("Estimated cost exceeds the per-prototype limit");
+            if (action.prospectBudgetMinor !== null && action.prospectBudgetMinor < policy.pricing.minimumDealValueMinor) approve.push("Prospect budget is below the minimum deal value");
+            if (!b.autoBuild) approve.push("Automatic prototype builds are disabled");
             break;
         }
 

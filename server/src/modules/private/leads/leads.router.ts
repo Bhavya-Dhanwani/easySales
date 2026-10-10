@@ -17,7 +17,7 @@ import { audit } from "../../../shared/audit/audit.service.js";
 import { activeWorkflowFor, startWorkflow } from "../../../shared/workflows/workflow.service.js";
 import { getCurrentPolicy, normalizeEmail } from "../../../shared/policy/policy.service.js";
 import { requalify } from "../../../shared/research/research.service.js";
-import { priceProposal } from "../../../shared/utils/pricing.util.js";
+import { createProposal } from "../../../shared/proposals/proposal.service.js";
 import { escapeRegex, nextCursor, oid, pageParams, str } from "../../../shared/utils/request.util.js";
 import Ok from "../../../shared/responses/Ok.response.js";
 import Created from "../../../shared/responses/Created.response.js";
@@ -380,25 +380,12 @@ const ProposalRequestSchema = z.object({
 
 /*
     @route POST /api/v1/leads/:id/proposals
-    @desc Price deterministically, then let the proposal agent write it (202 Accepted)
+    @desc Same as POST /opportunities/:id/proposals: price deterministically, then the agent writes it (202)
 */
 router.post("/:id/proposals", authorize("proposals.write"), validate(ProposalRequestSchema), async (req: Request, res: Response) => {
     const ctx = ctxOf(req);
-    const lead = await Lead.findOne({ organizationId: ctx.organizationId, _id: oid(req.params.id) }).lean();
-    if (!lead) throw new NotFound("Lead not found");
-    const profile = await BusinessProfile.findOne({ organizationId: ctx.organizationId }).lean();
-    const { config } = await getCurrentPolicy(ctx.organizationId);
-    const priced = priceProposal(profile?.services ?? [], req.body.services, req.body.discountPercent);
-
-    const proposal = await Proposal.create({
-        organizationId: ctx.organizationId, leadId: lead._id, items: priced.items, currency: config.pricing.currency,
-        subtotalMinor: priced.subtotalMinor, discountPercent: priced.discountPercent, totalMinor: priced.totalMinor, status: "generating",
-    });
-    const { workflow } = await startWorkflow({
-        organizationId: ctx.organizationId, type: "proposal.generate", entityType: "proposal", entityId: proposal._id,
-        idempotencyKey: `proposal:${proposal._id}:generate`, startedBy: ctx.userId, actor: { type: "user", id: ctx.userId },
-    });
-    return ApiResponse(res, 202, "Proposal is being written", { proposal, workflowId: workflow._id });
+    const r = await createProposal(ctx.organizationId, oid(req.params.id), req.body, ctx.userId);
+    return ApiResponse(res, 202, "Proposal is being written", r);
 });
 
 export default router;

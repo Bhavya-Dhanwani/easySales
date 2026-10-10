@@ -48,6 +48,17 @@ const businessProfileSchema = new mongoose.Schema({
     // bumped on every save, recorded on each research report and qualification
     version: { type: Number, default: 1 },
 
+    // approved commercial terms copied verbatim into every proposal (never written by the AI)
+    terms: { type: String, default: "", maxlength: 8000 },
+
+    revisionRounds: { type: Number, default: 2, min: 0 },
+
+    // percentages of the total; must add up to 100
+    paymentSchedule: {
+        type: [{ _id: false, label: { type: String, maxlength: 80 }, percent: { type: Number, min: 1, max: 100 } }],
+        default: undefined,
+    },
+
     caseStudies: [{
         _id: false,
         title: { type: String, maxlength: 200 },
