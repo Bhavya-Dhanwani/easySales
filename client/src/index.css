@@ -26,8 +26,9 @@
   --bad: #c2410c;
   --info: #2563eb;
 
-  --display: "Bricolage Grotesque", "Inter", system-ui, sans-serif;
-  --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --display: "Geist", system-ui, sans-serif;
+  --sans: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "Geist Mono", ui-monospace, Menlo, monospace;
 
   --r-sm: 10px;
   --r-md: 14px;
@@ -61,7 +62,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 
 /* ---------- type ---------- */
-.display { font-family: var(--display); font-weight: 700; letter-spacing: -0.04em; line-height: 1; margin: 0; }
+.display { font-family: var(--display); font-weight: 600; letter-spacing: -0.045em; line-height: 1; margin: 0; }
 .h1 { font-family: var(--display); font-size: clamp(28px, 3.4vw, 40px); font-weight: 700; letter-spacing: -0.035em; line-height: 1.05; margin: 0; }
 .h2 { font-family: var(--display); font-size: 21px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; margin: 0; }
 .h3 { font-size: 15.5px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
@@ -74,7 +75,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .eyebrow::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--lime-2); box-shadow: 0 0 0 3px var(--lime-soft); }
 .label { font: 600 12px/1.3 var(--sans); color: var(--muted); letter-spacing: 0.01em; }
 .muted { color: var(--muted); }
-.mono { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 12.5px; }
+.mono { font-family: var(--mono); font-size: 12.5px; }
 .small { font-size: 13px; }
 .lede { font-size: 17.5px; line-height: 1.6; color: var(--ink-2); max-width: 50ch; }
 .num { font-family: var(--display); font-weight: 700; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
