@@ -13,6 +13,7 @@
   },
   "include": [
     "server.ts",
+    "worker.ts",
     "src/**/*"
   ],
   "exclude": [

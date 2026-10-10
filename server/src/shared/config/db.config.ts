@@ -16,8 +16,9 @@ async function connectDB() {
     }
     catch (error) {
 
-        // logging the error
+        // logging the error and failing fast: the API must not run without its database
         logger.error(error, "Error connecting to the database");
+        throw error;
 
     }
 

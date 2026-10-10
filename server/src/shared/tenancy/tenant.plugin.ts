@@ -13,7 +13,6 @@ export const tenantFields = {
         type: Schema.Types.ObjectId,
         ref: "Organization",
         required: true,
-        index: true,
         immutable: true,
     },
 } as const;

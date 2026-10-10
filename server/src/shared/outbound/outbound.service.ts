@@ -66,7 +66,9 @@ export async function proposeOutbound(req: OutboundRequest): Promise<OutboundRes
     }
 
     const to = req.lead.contact?.email ?? "";
-    const { config, version } = await getCurrentPolicy(organizationId);
+    const { config: policy, version } = await getCurrentPolicy(organizationId);
+    // a human writing their own message is the approval; every other rule still applies
+    const config = req.actor.type === "user" ? { ...policy, outreach: { ...policy.outreach, autoSend: true } } : policy;
     const profile = await BusinessProfile.findOne({ organizationId }).lean();
     const prohibitedHits = findProhibitedClaims(`${req.subject}\n${req.body}`, profile?.prohibitedClaims ?? []);
     const suppressed = await isSuppressed(organizationId, to);
