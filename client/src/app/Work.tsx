@@ -1,39 +1,172 @@
 import { Fragment, useState } from 'react'
-import { Link } from 'react-router'
-import { api } from '../lib/api'
+import { Link, useSearchParams } from 'react-router'
+import { api, idempotencyKey } from '../lib/api'
 import { ago, human, money } from '../lib/format'
-import type { AgentTask, Approval, Conversation, Workflow } from '../lib/types'
+import type { AgentTask, Approval, AuditEvent, Conversation, Message, Workflow } from '../lib/types'
 import { Badge, Empty, PageHead, Spinner, useLoad, useToast } from '../components/ui'
 import { useAuth } from '../lib/auth'
 
-/* -------------------------------- inbox -------------------------------- */
+const INBOX_FILTERS = [['', 'All'], ['needs_review', 'Needs review'], ['open', 'Replied'], ['waiting', 'Waiting'], ['mine', 'Assigned to me'], ['closed', 'Closed']] as const
+
+const intentTone = (i?: string) => (['interested', 'meeting_request'].includes(i ?? '') ? 'ok' : ['opt_out', 'not_interested', 'complaint'].includes(i ?? '') ? 'bad' : ['pricing_question', 'objection', 'unclear'].includes(i ?? '') ? 'pending' : '')
+
+function Thread({ id, onChange }: { id: string; onChange: () => void }) {
+  const toast = useToast()
+  const [reply, setReply] = useState('')
+  const [logged, setLogged] = useState('')
+  const [showActivity, setShowActivity] = useState(false)
+  const { data, reload } = useLoad(
+    () => api<{ conversation: Conversation; messages: Message[] }>(`/v1/conversations/${id}`),
+    [id],
+    (d) => d.messages.some((m) => ['queued', 'sending'].includes(m.status)),
+  )
+  const activity = useLoad(() => (showActivity ? api<{ events: AuditEvent[] }>(`/v1/conversations/${id}/activity`) : Promise.resolve({ events: [] })), [id, showActivity])
+  if (!data) return <Spinner />
+  const { conversation: c, messages } = data
+  const act = async (fn: () => Promise<unknown>, ok: string) => {
+    try { await fn(); toast(ok); await reload(); onChange() } catch (e) { toast((e as Error).message, true) }
+  }
+  return (
+    <div className="stack">
+      <div className="row-flex between">
+        <div>
+          <div className="h2">{c.lead?.company.name}</div>
+          <div className="small muted">{c.lead?.contact?.name} · {c.subject}</div>
+        </div>
+        <div className="row-flex">
+          <Badge status={c.status}>{human(c.status)}</Badge>
+          {c.conversationState && <span className="badge plain">{human(c.conversationState)}</span>}
+        </div>
+      </div>
+      {c.summary && <div className="card tight small"><b>AI summary · </b>{c.summary}</div>}
+      <div className="row-flex">
+        <Link className="btn sm ghost" to={`/app/leads/${c.leadId}`}>Open lead</Link>
+        {!c.assignedTo
+          ? <button className="btn sm ghost" onClick={() => act(() => api(`/v1/conversations/${c._id}/assign`, { body: {} }), 'Assigned to you — automation paused')}>Assign to me</button>
+          : <button className="btn sm ghost" onClick={() => act(() => api(`/v1/conversations/${c._id}/assign`, { body: { userId: null } }), 'Unassigned')}>Unassign</button>}
+        {!['closed', 'suppressed'].includes(c.status) && <button className="btn sm ghost" onClick={() => act(() => api(`/v1/conversations/${c._id}/close`, { method: 'POST' }), 'Closed')}>Close</button>}
+        {c.status !== 'suppressed' && <button className="btn sm danger" onClick={() => window.confirm('Never contact this person again?') && act(() => api(`/v1/recipients/${c.leadId}/suppress`, { method: 'POST' }), 'Suppressed')}>Suppress</button>}
+        <button className="linkish" onClick={() => setShowActivity(!showActivity)}>{showActivity ? 'Hide activity' : 'Activity'}</button>
+      </div>
+      {showActivity && (
+        <div className="card tight stack sm">
+          {(activity.data?.events ?? []).map((e) => <div key={e._id} className="row-flex between small"><span>{human(e.action)}{(e.metadata as { reason?: string })?.reason ? ` — ${(e.metadata as { reason?: string }).reason}` : ''}</span><span className="muted">{ago(e.createdAt)}</span></div>)}
+          {!activity.data?.events.length && <span className="small muted">No events.</span>}
+        </div>
+      )}
+      <div className="thread">
+        {messages.map((m) => (
+          <div key={m._id} className={`msg ${m.direction === 'inbound' ? 'in' : 'out'}`}>
+            <div className="msg-head">
+              <span className="label">{m.direction === 'inbound' ? 'Prospect' : human(m.kind)}</span>
+              <span className="row-flex">
+                {m.intent && <Badge status={intentTone(m.intent)}>{human(m.intent)}{m.classification?.confidence != null ? ` · ${Math.round(m.classification.confidence * 100)}%` : ''}</Badge>}
+                {m.direction === 'outbound' && <Badge status={m.status} />}
+                <span className="small muted">{ago(m.sentAt ?? m.createdAt)}</span>
+              </span>
+            </div>
+            {m.subject && <div style={{ fontWeight: 600, marginBottom: 6 }}>{m.subject}</div>}
+            <pre className="body">{m.body}</pre>
+            {m.error && <div className="small form-error" style={{ marginTop: 8 }}>{m.error}</div>}
+          </div>
+        ))}
+      </div>
+      {c.status !== 'suppressed' && (
+        <div className="grid-2">
+          <div className="card stack">
+            <div className="label">Your reply</div>
+            <textarea className="textarea" value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Write a reply. Suppression and claim rules still apply." />
+            <div><button className="btn sm" disabled={!reply.trim()} onClick={() => act(async () => { await api(`/v1/conversations/${c._id}/reply`, { body: { body: reply }, headers: { 'Idempotency-Key': idempotencyKey() } }); setReply('') }, 'Reply queued')}>Send reply</button></div>
+          </div>
+          <div className="card stack">
+            <div className="label">Log a reply from your mailbox</div>
+            <textarea className="textarea" value={logged} onChange={(e) => setLogged(e.target.value)} placeholder="Paste a reply that arrived outside the webhook; the agent will classify it." />
+            <div><button className="btn sm ghost" disabled={!logged.trim()} onClick={() => act(async () => { await api(`/v1/conversations/${c._id}/inbound`, { body: { body: logged }, headers: { 'Idempotency-Key': idempotencyKey() } }); setLogged('') }, 'Logged — the agent is on it')}>Log reply</button></div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export function Inbox() {
   const { org } = useAuth()
-  const { data, loading } = useLoad(() => api<{ conversations: Conversation[] }>('/v1/conversations'), [org?.id])
+  const [params, setParams] = useSearchParams()
+  const filter = params.get('filter') ?? ''
+  const selected = params.get('c')
+  const q = filter === 'mine' ? '?assigned=me' : filter ? `?status=${filter}` : ''
+  const { data, loading, reload } = useLoad(() => api<{ conversations: Conversation[] }>(`/v1/conversations${q}`), [org?.id, q])
+  const set = (k: string, v: string | null) => { const n = new URLSearchParams(params); if (v) n.set(k, v); else n.delete(k); setParams(n, { replace: true }) }
+  const convs = data?.conversations ?? []
+
   return (
     <div className="stack lg fade-in">
-      <PageHead index="Inbox" title={<>Conversations, <span className="hl">in context.</span></>} />
-      {loading ? <Spinner label="Loading" /> : !data?.conversations.length ? (
-        <Empty title="No conversations yet.">A conversation opens when the outreach agent drafts the first email to a lead.</Empty>
-      ) : (
-        <div className="table-wrap">
-          <table className="table">
-            <thead><tr><th>Lead</th><th>Subject</th><th>Last intent</th><th>Status</th><th>Activity</th></tr></thead>
-            <tbody>
-              {data.conversations.map((c) => (
-                <tr key={c._id}>
-                  <td><Link to={`/app/leads/${c.leadId}`} style={{ fontWeight: 600, textDecoration: 'none' }}>{c.lead?.company.name ?? 'Lead'}</Link><div className="small muted">{c.lead?.contact?.name}</div></td>
-                  <td className="small">{c.subject ?? '—'}{c.summary && <div className="small muted" style={{ maxWidth: 420, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.summary}</div>}</td>
-                  <td>{c.lastIntent ? <Badge status={c.lastIntent === 'interested' || c.lastIntent === 'meeting_request' ? 'ok' : c.lastIntent === 'opt_out' || c.lastIntent === 'not_interested' ? 'bad' : ''}>{human(c.lastIntent)}</Badge> : <span className="muted">—</span>}</td>
-                  <td><Badge status={c.status} /></td>
-                  <td className="small muted">{ago(c.lastMessageAt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <PageHead index="Inbox" title={<>Every conversation, <span className="hl">in context.</span></>} />
+      <div className="status-tabs">{INBOX_FILTERS.map(([v, l]) => <button key={v} className={`status-tab ${filter === v ? 'active' : ''}`} onClick={() => set('filter', v || null)}>{l}</button>)}</div>
+      {loading ? <Spinner /> : !convs.length ? <Empty title="Nothing here.">Conversations open when the first email to a lead is drafted.</Empty> : (
+        <div className="inbox">
+          <div className="inbox-list">
+            {convs.map((c) => (
+              <button key={c._id} className={`inbox-item ${selected === c._id ? 'active' : ''}`} onClick={() => set('c', c._id)}>
+                <div className="row-flex between" style={{ gap: 6 }}><b>{c.lead?.company.name ?? 'Lead'}</b><span className="small muted">{ago(c.lastMessageAt)}</span></div>
+                <div className="small muted" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.summary || c.subject || 'No messages yet'}</div>
+                <div className="row-flex" style={{ gap: 6, marginTop: 6 }}>
+                  <Badge status={c.status}>{human(c.status)}</Badge>
+                  {c.lastIntent && <Badge status={intentTone(c.lastIntent)}>{human(c.lastIntent)}</Badge>}
+                  {c.assignedTo && <span className="badge plain">assigned</span>}
+                </div>
+              </button>
+            ))}
+          </div>
+          <div className="inbox-pane">{selected ? <Thread id={selected} onChange={reload} /> : <Empty title="Pick a conversation.">Threads that need you are under “Needs review”.</Empty>}</div>
         </div>
       )}
+    </div>
+  )
+}
+
+/* ---------------------------- review queue ----------------------------- */
+
+interface Queue { approvals: number; threads: Conversation[]; uncertain: Message[]; blocked: Message[] }
+
+export function ReviewQueue() {
+  const { org } = useAuth()
+  const toast = useToast()
+  const [tab, setTab] = useState<'approvals' | 'threads' | 'uncertain' | 'blocked'>('approvals')
+  const { data, reload } = useLoad(() => api<Queue>('/v1/review-queue'), [org?.id, tab])
+  const counts = { approvals: data?.approvals ?? 0, threads: data?.threads.length ?? 0, uncertain: data?.uncertain.length ?? 0, blocked: data?.blocked.length ?? 0 }
+  const reconcile = (id: string, outcome: 'was_sent' | 'not_sent') => api(`/v1/outbound-actions/${id}/reconcile`, { body: { outcome } }).then(() => { toast(outcome === 'was_sent' ? 'Marked as sent' : 'Queued again'); reload() }).catch((e) => toast(e.message, true))
+  const leadName = (m: { lead?: { company: { name: string } } | null }) => m.lead?.company.name ?? 'Lead'
+
+  return (
+    <div className="stack lg fade-in">
+      <PageHead index="Review queue" title={<>Everything that <span className="hl">needs a human.</span></>} />
+      <div className="status-tabs">
+        {([['approvals', 'Approvals'], ['threads', 'Escalated threads'], ['uncertain', 'Uncertain sends'], ['blocked', 'Blocked by policy']] as const).map(([k, l]) => (
+          <button key={k} className={`status-tab ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}>{l} <b>{counts[k]}</b></button>
+        ))}
+      </div>
+      {tab === 'approvals' && <Approvals embedded />}
+      {tab === 'threads' && (!data?.threads.length ? <Empty title="No escalations.">Unclear replies, pricing questions and complaints land here.</Empty> : (
+        <div className="stack">{data.threads.map((c) => (
+          <div key={c._id} className="card row-flex between">
+            <div><b>{leadName(c)}</b> <Badge status={intentTone(c.lastIntent)}>{human(c.lastIntent)}</Badge><div className="small muted" style={{ marginTop: 6 }}>{c.summary}</div></div>
+            <Link className="btn sm" to={`/app/inbox?filter=needs_review&c=${c._id}`}>Open thread</Link>
+          </div>
+        ))}</div>
+      ))}
+      {tab === 'uncertain' && (!data?.uncertain.length ? <Empty title="No uncertain sends.">If the connection drops mid-send we never resend blindly — confirm with your provider and resolve it here.</Empty> : (
+        <div className="stack">{data.uncertain.map((m) => (
+          <div key={m._id} className="card row-flex between">
+            <div><b>{leadName(m)}</b> · {m.subject}<div className="small form-error">{m.error}</div></div>
+            <div className="row-flex"><button className="btn sm ghost" onClick={() => reconcile(m._id, 'was_sent')}>It was sent</button><button className="btn sm" onClick={() => reconcile(m._id, 'not_sent')}>Not sent — retry</button></div>
+          </div>
+        ))}</div>
+      ))}
+      {tab === 'blocked' && (!data?.blocked.length ? <Empty title="Nothing blocked this week." /> : (
+        <div className="table-wrap"><table className="table"><thead><tr><th>Lead</th><th>Message</th><th>Why it was stopped</th><th>When</th></tr></thead>
+          <tbody>{data.blocked.map((m) => <tr key={m._id}><td>{leadName(m)}</td><td className="small">{human(m.kind)} · {m.subject}</td><td className="small form-error">{m.error}</td><td className="small muted">{ago(m.createdAt)}</td></tr>)}</tbody></table></div>
+      ))}
     </div>
   )
 }
@@ -103,13 +236,13 @@ function ApprovalCard({ a, onDone }: { a: Approval; onDone: () => void }) {
   )
 }
 
-export function Approvals() {
+export function Approvals({ embedded = false }: { embedded?: boolean }) {
   const { org } = useAuth()
   const [status, setStatus] = useState('pending')
   const { data, loading, reload } = useLoad(() => api<{ approvals: Approval[] }>(`/v1/approvals?status=${status}`), [org?.id, status])
   return (
     <div className="stack lg fade-in">
-      <PageHead index="Approvals" title={<>Nothing leaves <span className="hl">without you.</span></>} />
+      {!embedded && <PageHead index="Approvals" title={<>Nothing leaves <span className="hl">without you.</span></>} />}
       <div className="tabs">{['pending', 'approved', 'rejected', 'expired'].map((s) => <button key={s} className={status === s ? 'active' : ''} onClick={() => setStatus(s)}>{s}</button>)}</div>
       {loading ? <Spinner label="Loading" /> : !data?.approvals.length ? (
         <Empty title={status === 'pending' ? 'All clear.' : `No ${status} approvals.`}>{status === 'pending' ? 'When an agent wants to do something your policy reserves for humans, it waits here.' : ''}</Empty>

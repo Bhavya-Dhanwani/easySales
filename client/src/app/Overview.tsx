@@ -39,7 +39,7 @@ export default function Overview() {
     <div className="stack lg fade-in">
       <PageHead index="Overview" title={<>Good to see you, <span className="hl">{user?.name.split(' ')[0]}.</span></>}>
         <Link className="btn ghost" to="/app/leads/import">Import leads</Link>
-        {dash.pendingApprovals > 0 && <Link className="btn lime" to="/app/approvals">{dash.pendingApprovals} to approve</Link>}
+        {dash.pendingApprovals > 0 && <Link className="btn lime" to="/app/review">{dash.pendingApprovals} to approve</Link>}
       </PageHead>
 
       <div className="welcome">
@@ -60,7 +60,7 @@ export default function Overview() {
       <div className="grid-4">
         <Stat label="Leads" value={<CountUp to={summary.total} duration={1} />} hint={`${summary.counts.qualified ?? 0} qualified · ${summary.counts.needs_review ?? 0} to review`} />
         <Stat label="Sent · 7 days" value={<CountUp to={dash.sent7d} duration={1} />} hint={`${dash.replies7d} replies · ${dash.replyRate}% reply rate`} />
-        <Stat label="Awaiting you" value={dash.pendingApprovals} hint={dash.pendingApprovals ? <Link to="/app/approvals">Review approvals →</Link> : 'Nothing pending'} />
+        <Stat label="Awaiting you" value={dash.pendingApprovals} hint={dash.pendingApprovals ? <Link to="/app/review">Review approvals →</Link> : 'Nothing pending'} />
         <Stat label="AI calls today" value={dash.aiCallsToday} hint={
           <span className="stack sm" style={{ marginTop: 6 }}>
             <span className="meter"><i style={{ width: `${Math.min(100, (dash.aiCallsToday / Math.max(1, dash.aiBudgetPerDay)) * 100)}%` }} /></span>

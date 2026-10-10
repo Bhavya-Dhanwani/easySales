@@ -70,6 +70,46 @@ function ProposalBuilder({ leadId, onCreated }: { leadId: string; onCreated: () 
   )
 }
 
+function DraftComposer({ leadId, onDone }: { leadId: string; onDone: () => void }) {
+  const toast = useToast()
+  const [draft, setDraft] = useState<Message | null>(null)
+  const [subject, setSubject] = useState('')
+  const [body, setBody] = useState('')
+  const [busy, setBusy] = useState(false)
+  const make = async () => {
+    setBusy(true)
+    try {
+      const r = await api<{ draft: Message }>(`/v1/leads/${leadId}/outreach-drafts`, { method: 'POST' })
+      setDraft(r.draft); setSubject(r.draft.subject ?? ''); setBody(r.draft.body)
+    } catch (e) { toast((e as Error).message, true) } finally { setBusy(false) }
+  }
+  const send = async () => {
+    if (!draft) return
+    setBusy(true)
+    try {
+      const r = await api<{ status: string; reasons: string[] }>(`/v1/outbound-actions/${draft._id}/send`, { body: { subject, body } })
+      toast(r.status === 'queued' ? 'Queued for sending' : r.status === 'pending_approval' ? `Sent to review: ${r.reasons[0] ?? ''}` : `Blocked: ${r.reasons[0] ?? ''}`, r.status === 'rejected')
+      setDraft(null)
+      onDone()
+    } catch (e) { toast((e as Error).message, true) } finally { setBusy(false) }
+  }
+  if (!draft) return <button className="btn sm lime" disabled={busy} onClick={make}>{busy ? 'Writing…' : 'Draft email with AI'}</button>
+  return (
+    <div className="card stack draft-card">
+      <div className="row-flex between"><span className="h3">Draft · not sent</span><button className="linkish" onClick={() => setDraft(null)}>Discard</button></div>
+      <input className="input" value={subject} onChange={(e) => setSubject(e.target.value)} aria-label="Subject" />
+      <textarea className="textarea" style={{ minHeight: 200 }} value={body} onChange={(e) => setBody(e.target.value)} aria-label="Body" />
+      {!!draft.claims?.length && (
+        <div className="stack sm">
+          <span className="label">Personalisation checked against research</span>
+          {draft.claims.map((c, i) => <div key={i} className="row-flex between small"><span>{c.claim}</span><Badge status={c.verified ? 'approved' : 'pending'}>{c.verified ? 'backed by evidence' : 'unverified → review'}</Badge></div>)}
+        </div>
+      )}
+      <div className="row-flex"><button className="btn" disabled={busy} onClick={send}>Send</button><span className="small muted">Your policy decides: send now, ask for review, or block.</span></div>
+    </div>
+  )
+}
+
 export default function LeadDetail() {
   const { id } = useParams()
   const nav = useNavigate()
@@ -113,7 +153,7 @@ export default function LeadDetail() {
       {approvals.length > 0 && (
         <div className="card row-flex between" style={{ borderColor: 'rgba(178,106,0,.35)', background: 'rgba(178,106,0,.05)' }}>
           <span><b>{approvals.length}</b> action{approvals.length > 1 ? 's' : ''} for this lead need{approvals.length > 1 ? '' : 's'} your approval.</span>
-          <Link className="btn sm" to="/app/approvals">Review</Link>
+          <Link className="btn sm" to="/app/review">Review</Link>
         </div>
       )}
 
@@ -183,7 +223,8 @@ export default function LeadDetail() {
           </section>
 
           <section className="stack">
-            <div className="row-flex between"><span className="h2">Conversation</span>{conversation && <Badge status={conversation.status} />}</div>
+            <div className="row-flex between"><span className="h2">Conversation</span><span className="row-flex">{conversation && <Badge status={conversation.status} />}{conversation && <Link className="btn sm ghost" to={`/app/inbox?c=${conversation._id}`}>Open in inbox</Link>}</span></div>
+            {lead.status === 'qualified' && lead.contact?.email && conversation?.status !== 'suppressed' && <DraftComposer leadId={lead._id} onDone={reload} />}
             {conversation?.summary && <div className="card tight small"><span className="label">AI summary · </span>{conversation.summary}</div>}
             {messages.length === 0 ? <Empty title="No messages yet.">The outreach agent drafts the first email after qualification.</Empty> : (
               <div className="thread">

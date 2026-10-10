@@ -10,13 +10,15 @@ const NAV: { group: string; items: { to: string; label: string; end?: boolean }[
     { to: '/app', label: 'Overview', end: true },
     { to: '/app/leads', label: 'Lead pipeline' },
     { to: '/app/research', label: 'Research activity' },
+    { to: '/app/campaigns', label: 'Campaigns' },
     { to: '/app/inbox', label: 'Inbox' },
-    { to: '/app/approvals', label: 'Approvals' },
+    { to: '/app/review', label: 'Review queue' },
     { to: '/app/runs', label: 'Agent runs' },
   ] },
   { group: 'Configure', items: [
     { to: '/app/business', label: 'Business brain' },
     { to: '/app/policies', label: 'Autonomy & limits' },
+    { to: '/app/email', label: 'Email account' },
     { to: '/app/team', label: 'Team' },
   ] },
   { group: 'Trust', items: [
@@ -64,7 +66,7 @@ export default function AppLayout() {
             {g.items.map((i) => (
               <NavLink key={i.to} to={i.to} end={i.end} className={({ isActive }) => `side-link ${isActive ? 'active' : ''}`}>
                 <span>{i.label}</span>
-                {i.to === '/app/approvals' && pending > 0 && <span className="count">{pending}</span>}
+                {i.to === '/app/review' && pending > 0 && <span className="count">{pending}</span>}
               </NavLink>
             ))}
           </nav>

@@ -62,7 +62,7 @@ export function Business() {
     setBusy(true)
     try {
       const body = {
-        businessName: p!.businessName, businessType: p!.businessType, description: p!.description, website: p!.website,
+        businessName: p!.businessName, businessType: p!.businessType, description: p!.description, website: p!.website, meetingLink: p!.meetingLink || '',
         services: p!.services.map((s) => ({ name: s.name, description: s.description ?? '', basePriceMinor: Math.round(s.basePriceMinor), ...(s.deliveryDaysMin ? { deliveryDaysMin: s.deliveryDaysMin } : {}), ...(s.deliveryDaysMax ? { deliveryDaysMax: s.deliveryDaysMax } : {}) })),
         idealCustomerProfile: p!.idealCustomerProfile, brandVoice: p!.brandVoice,
         approvedClaims: p!.approvedClaims, prohibitedClaims: p!.prohibitedClaims,
@@ -89,6 +89,7 @@ export function Business() {
         </div>
         <label className="field"><span>What you do</span><textarea className="textarea" placeholder="Who you help, how, and what makes you different." value={p.description} onChange={(e) => set('description', e.target.value)} /></label>
         <label className="field"><span>Brand voice</span><input className="input" value={p.brandVoice} onChange={(e) => set('brandVoice', e.target.value)} /></label>
+        <label className="field"><span>Meeting booking link</span><input className="input" placeholder="https://cal.com/you/20min" value={p.meetingLink ?? ''} onChange={(e) => set('meetingLink', e.target.value)} /><small>Shared when a prospect asks to meet.</small></label>
       </section>
 
       <section className="card stack">
@@ -185,6 +186,7 @@ export function Policies() {
         <label className="check"><input type="checkbox" checked={o.requireConsentBasis} onChange={(e) => setO({ requireConsentBasis: e.target.checked })} /> Require a recorded consent basis per contact</label>
         <div className="grid-3">
           <label className="field"><span>New contacts / day</span><input className="input" type="number" min={0} value={o.maxNewContactsPerDay} onChange={(e) => setO({ maxNewContactsPerDay: num(e.target.value) })} /></label>
+          <label className="field"><span>Emails / hour (all outreach)</span><input className="input" type="number" min={1} max={500} value={o.maxPerHour ?? 10} onChange={(e) => setO({ maxPerHour: Math.max(1, num(e.target.value)) })} /></label>
           <label className="field"><span>Max follow-ups</span><input className="input" type="number" min={0} max={10} value={o.maxFollowUps} onChange={(e) => setO({ maxFollowUps: num(e.target.value) })} /></label>
           <label className="field"><span>Hours between follow-ups</span><input className="input" type="number" min={1} value={o.minimumFollowUpIntervalHours} onChange={(e) => setO({ minimumFollowUpIntervalHours: Math.max(1, num(e.target.value)) })} /></label>
         </div>

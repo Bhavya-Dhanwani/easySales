@@ -12,6 +12,10 @@ const Leads = lazy(() => import('./app/Leads'))
 const LeadDetail = lazy(() => import('./app/LeadDetail'))
 const ImportWizard = lazy(() => import('./app/ImportWizard'))
 const Research = lazy(() => import('./app/Research'))
+const Email = lazy(() => import('./app/Email'))
+const Campaigns = lazy(() => import('./app/Campaigns'))
+const CampaignDetail = lazy(() => import('./app/Campaigns').then((m) => ({ default: m.CampaignDetail })))
+const ReviewQueue = lazy(() => work().then((m) => ({ default: m.ReviewQueue })))
 const work = () => import('./app/Work')
 const Approvals = lazy(() => work().then((m) => ({ default: m.Approvals })))
 const Inbox = lazy(() => work().then((m) => ({ default: m.Inbox })))
@@ -52,6 +56,10 @@ export default function App() {
           <Route path="research" element={<Research />} />
           <Route path="inbox" element={<Inbox />} />
           <Route path="approvals" element={<Approvals />} />
+          <Route path="review" element={<ReviewQueue />} />
+          <Route path="campaigns" element={<Campaigns />} />
+          <Route path="campaigns/:id" element={<CampaignDetail />} />
+          <Route path="email" element={<Email />} />
           <Route path="runs" element={<Runs />} />
           <Route path="business" element={<Business />} />
           <Route path="policies" element={<Policies />} />
