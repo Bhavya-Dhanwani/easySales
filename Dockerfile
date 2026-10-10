@@ -1,39 +1,31 @@
-# Multi-stage Dockerfile
+# syntax=docker/dockerfile:1
 
-# Stage 1: Build Client (Frontend)
-FROM node:20-alpine AS client-builder
-WORKDIR /app
-COPY . .
-RUN if [ -d "client" ] && [ -f "client/package.json" ]; then cd client && npm ci && npm run build; else mkdir -p client/dist; fi
-
-# Stage 2: Build Server (Backend)
-FROM node:20-alpine AS builder
-WORKDIR /app
-
-# Copy server package files
-COPY server/package*.json ./server/
-WORKDIR /app/server
+# ---- client: static build ----
+FROM node:22-alpine AS client
+WORKDIR /app/client
+COPY client/package*.json ./
 RUN npm ci
+COPY client/ ./
+RUN npm run build
 
-# Copy server source code
+# ---- server: compile TypeScript ----
+FROM node:22-alpine AS server
+WORKDIR /app/server
+COPY server/package*.json ./
+RUN npm ci
 COPY server/ ./
 RUN npm run build
 
-# Stage 3: Production Runner
-FROM node:20-alpine AS runner
-WORKDIR /app
-
+# ---- runtime: production deps only, non-root ----
+FROM node:22-alpine AS runner
 ENV NODE_ENV=production
 WORKDIR /app/server
-
-COPY --from=builder /app/server/package*.json ./
-RUN npm ci --only=production
-
-COPY --from=builder /app/server/dist ./dist
-COPY --from=builder /app/server/server.js ./server.js
-
-# Copy built frontend assets into server public folder
-COPY --from=client-builder /app/client/dist ./public
-
+COPY server/package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+COPY --from=server /app/server/dist ./dist
+# the API serves the SPA from dist/public (see src/app.ts)
+COPY --from=client /app/client/dist ./dist/public
+USER node
 EXPOSE 5000
-CMD ["node", "server.js"]
+HEALTHCHECK --interval=30s --timeout=5s CMD wget -qO- http://127.0.0.1:5000/api/health || exit 1
+CMD ["node", "dist/server.js"]
