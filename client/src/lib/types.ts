@@ -77,7 +77,46 @@ export interface Message {
   error?: string
   approvalId?: string
   sentAt?: string
+  deliveredAt?: string
   createdAt: string
+  campaignId?: string
+  classification?: { confidence?: number; requiresHuman?: boolean; recommendedAction?: string }
+  claims?: { claim: string; evidenceUrl?: string; verified: boolean }[]
+  lead?: { _id: string; company: { name: string }; contact?: { name?: string; email?: string } } | null
+}
+
+export interface Campaign {
+  _id: string
+  name: string
+  objective: string
+  status: 'draft' | 'active' | 'paused' | 'completed'
+  audience: { statuses: string[]; minScore: number; industries: string[]; countries: string[] }
+  followUpDelaysDays: number[]
+  dailyLimit: number
+  autoSend: boolean
+  startedAt?: string
+  createdAt: string
+  enrolled?: number
+}
+
+export interface CampaignAnalytics {
+  range: string | { from: string; to: string }
+  enrolled: number; threads: number; drafted: number; pendingApproval: number; queued: number
+  accepted: number; delivered: number; bounced: number; failed: number; blockedByPolicy: number
+  repliedThreads: number; optedOut: number; complaints: number; meetings: number
+  rates: Record<string, { value: number | null; of: string }>
+}
+
+export interface EmailIntegration {
+  _id: string
+  status: 'connected' | 'error' | 'disconnected'
+  fromName: string
+  fromEmail: string
+  replyTo?: string
+  smtp: { host: string; port: number; secure: boolean; user: string }
+  lastVerifiedAt?: string
+  lastError?: string
+  webhookUrl: string
 }
 
 export interface Conversation {
@@ -85,6 +124,12 @@ export interface Conversation {
   leadId: string
   subject?: string
   status: string
+  conversationState?: string
+  campaignId?: string
+  assignedTo?: string
+  nextActionAt?: string
+  lastInboundAt?: string
+  followUpsSent?: number
   summary?: string
   lastIntent?: string
   lastMessageAt?: string
@@ -160,6 +205,7 @@ export interface BusinessProfile {
   approvedClaims: string[]
   prohibitedClaims: string[]
   caseStudies: { title: string; summary: string }[]
+  meetingLink?: string
   scoringWeights?: Record<string, number>
   version?: number
 }
@@ -171,6 +217,7 @@ export interface PolicyConfig {
     autoSend: boolean
     requireConsentBasis: boolean
     maxNewContactsPerDay: number
+    maxPerHour: number
     maxFollowUps: number
     minimumFollowUpIntervalHours: number
     quietHours: { enabled: boolean; start: string; end: string; timezone: string }
