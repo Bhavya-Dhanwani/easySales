@@ -27,6 +27,7 @@ const Policies = lazy(() => settings().then((m) => ({ default: m.Policies })))
 const Suppressions = lazy(() => settings().then((m) => ({ default: m.Suppressions })))
 const Team = lazy(() => settings().then((m) => ({ default: m.Team })))
 const Usage = lazy(() => settings().then((m) => ({ default: m.Usage })))
+const Ops = lazy(() => import('./app/Ops'))
 
 // scroll to top on route change (keeps #hash links working)
 function ScrollReset() {
@@ -67,6 +68,7 @@ export default function App() {
           <Route path="suppressions" element={<Suppressions />} />
           <Route path="audit" element={<Audit />} />
           <Route path="usage" element={<Usage />} />
+          <Route path="ops" element={<Ops />} />
         </Route>
         <Route path="*" element={<div style={{ padding: '15vh 16px' }}><Empty title="Nothing here." action={<Link className="btn" to="/">Go home</Link>} /></div>} />
       </Routes>

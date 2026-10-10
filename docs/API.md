@@ -81,6 +81,20 @@ The opportunity id is the lead id. Build and extraction requests answer `202 Acc
 
 **Public preview.** `GET /api/preview/:token` serves the page with `Content-Security-Policy: sandbox; default-src 'none'; ...`: an opaque origin with no scripts, forms or remote resources. After expiry or revocation it returns `410`.
 
+## Operations, usage & launch controls (Sprint 5)
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/health/live` · `/api/health/ready` | liveness; readiness checks the database and (in-process) the worker. Nothing internal is disclosed |
+| GET | `/v1/organization/usage` | this month's funnel (qualified → contacted → replies → meetings → demos → views → proposals → won), metered usage by resource, cost per qualified opportunity and per won deal, spend vs limit |
+| GET / POST | `/v1/organization/budgets` | limits next to committed + held spend; POST `{ monthlySpendMinor?, maxLlmCallsPerDay?, maxResearchPerDay?, maxConcurrentResearch?, maxConcurrentBuilds?, artifactStorageBytes? }` publishes a new policy version |
+| POST | `/v1/opportunities/:id/handoff` | needs an accepted proposal; marks the deal won (only way to reach `won`) and returns the delivery package. Idempotent |
+| POST | `/v1/workflows/:id/retry` | requeue a failed job |
+| GET | `/api/admin/metrics/summary` | operators (`ADMIN_EMAILS`): API latency/errors, queue depth and age, failures, model latency, usage, demo builds, spend, cost per qualified opportunity |
+| GET / POST / DELETE | `/api/admin/feature-flags[/:id]` | `{ key: live_email \| auto_send \| prototypes, enabled, organizationId? }` (no id = all tenants) |
+| GET | `/api/admin/dead-letters` · POST `/api/admin/workflows/:id/retry` | failed jobs/events and uncertain sends, kept with their errors |
+
+Every response carries `X-Request-Id` (a sane incoming one is kept). Workflows started by a request use it as their `correlationId`, so logs, jobs and model calls of one action can be found together. `PATCH /v1/proposals/:id` now only accepts `{ status: "rejected" }`: acceptance goes through `record-acceptance`.
+
 ## Outreach, conversations, proposals (earlier sprints)
 `POST /v1/leads/:id/run` (research → qualify → outreach), `GET/POST /v1/approvals[/:id/approve|reject]`, `PATCH /v1/approvals/:id` (edit a draft), `GET /v1/conversations[/:id]`, `POST /v1/conversations/:id/inbound|reply`, `POST /v1/leads/:id/proposals`, `POST /v1/proposals/:id/send`, `PATCH /v1/proposals/:id`.
 

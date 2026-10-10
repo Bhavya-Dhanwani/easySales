@@ -233,7 +233,14 @@ export function Policies() {
 
       <section className="card stack">
         <div className="label">AI budget</div>
-        <label className="field" style={{ maxWidth: 280 }}><span>Max AI calls per day</span><input className="input" type="number" min={0} value={c.budgets.maxLlmCallsPerDay} onChange={(e) => setC({ ...c, budgets: { maxLlmCallsPerDay: num(e.target.value) } })} /><small>Runs stop (and are marked failed) when the budget is used up.</small></label>
+        <label className="field" style={{ maxWidth: 280 }}><span>Max AI calls per day</span><input className="input" type="number" min={0} value={c.budgets.maxLlmCallsPerDay} onChange={(e) => setC({ ...c, budgets: { ...c.budgets, maxLlmCallsPerDay: num(e.target.value) } })} /><small>Runs stop (and are marked failed) when the budget is used up.</small></label>
+        <div className="grid-3">
+          <label className="field"><span>Monthly spend limit</span><input className="input" type="number" min={0} value={(c.budgets.monthlySpendMinor ?? 0) / 100} onChange={(e) => setC({ ...c, budgets: { ...c.budgets, monthlySpendMinor: num(e.target.value) * 100 } })} /><small>AI, email and demo builds together. Work is held against it before it starts.</small></label>
+          <label className="field"><span>Research jobs / day</span><input className="input" type="number" min={0} value={c.budgets.maxResearchPerDay ?? 200} onChange={(e) => setC({ ...c, budgets: { ...c.budgets, maxResearchPerDay: num(e.target.value) } })} /></label>
+          <label className="field"><span>Research at once</span><input className="input" type="number" min={1} max={50} value={c.budgets.maxConcurrentResearch ?? 3} onChange={(e) => setC({ ...c, budgets: { ...c.budgets, maxConcurrentResearch: Math.max(1, num(e.target.value)) } })} /></label>
+          <label className="field"><span>Demo builds at once</span><input className="input" type="number" min={1} max={10} value={c.budgets.maxConcurrentBuilds ?? 1} onChange={(e) => setC({ ...c, budgets: { ...c.budgets, maxConcurrentBuilds: Math.max(1, num(e.target.value)) } })} /></label>
+          <label className="field"><span>Demo storage (MB)</span><input className="input" type="number" min={0} value={Math.round((c.budgets.artifactStorageBytes ?? 20_000_000) / 1_000_000)} onChange={(e) => setC({ ...c, budgets: { ...c.budgets, artifactStorageBytes: num(e.target.value) * 1_000_000 } })} /></label>
+        </div>
       </section>
 
       {c.prototypes && <section className="card stack">
@@ -359,11 +366,27 @@ export function Audit() {
 
 interface UsageRow { _id: string | null; calls: number; inputTokens: number; outputTokens: number }
 
+interface MonthUsage {
+  period: string
+  funnel: { qualified: number; contacted: number; meaningfulReplies: number; meetings: number; prototypesBuilt: number; prototypeViews: number; proposalsSent: number; dealsWon: number }
+  costMinor: number
+  costPerQualifiedMinor: number | null
+  costPerWonDealMinor: number | null
+  spend: { currency: string; total: { committedMinor: number; reservedMinor: number; limitMinor: number } }
+}
+
 export function Usage() {
   const { org } = useAuth()
-  const { data, error } = useLoad(() => api<{ byAgent: UsageRow[]; byModel: UsageRow[]; byDay: UsageRow[] }>('/v1/usage/summary'), [org?.id])
+  const { data, error } = useLoad(async () => ({
+    ...(await api<{ byAgent: UsageRow[]; byModel: UsageRow[]; byDay: UsageRow[] }>('/v1/usage/summary')),
+    month: await api<MonthUsage>('/v1/organization/usage'),
+  }), [org?.id])
   if (error) return <Empty title="You don't have access to usage." />
   if (!data) return <Spinner />
+  const mo = data.month
+  const cur = mo.spend.currency
+  const held = mo.spend.total.committedMinor + mo.spend.total.reservedMinor
+  const steps: [string, number][] = [['Qualified', mo.funnel.qualified], ['Contacted', mo.funnel.contacted], ['Real replies', mo.funnel.meaningfulReplies], ['Meetings', mo.funnel.meetings], ['Demos built', mo.funnel.prototypesBuilt], ['Demo views', mo.funnel.prototypeViews], ['Proposals sent', mo.funnel.proposalsSent], ['Won', mo.funnel.dealsWon]]
   const total = data.byAgent.reduce((a, r) => ({ calls: a.calls + r.calls, tokens: a.tokens + r.inputTokens + r.outputTokens }), { calls: 0, tokens: 0 })
   const max = Math.max(1, ...data.byDay.map((d) => d.calls))
   const table = (rows: UsageRow[], label: string) => (
@@ -377,7 +400,18 @@ export function Usage() {
   )
   return (
     <div className="stack lg fade-in">
-      <PageHead index="AI usage · 30 days" title={<>What the agents <span className="hl">cost.</span></>} />
+      <PageHead index={`Usage & budget · ${mo.period}`} title={<>What the agents <span className="hl">cost.</span></>} />
+      <div className="card stack">
+        <div className="row-flex between"><span className="label">This month’s funnel</span><span className="small muted">from first contact to won deal</span></div>
+        <div className="funnel">{steps.map(([l, n]) => <div key={l}><div className="score">{n}</div><span className="small muted">{l}</span></div>)}</div>
+      </div>
+      <div className="grid-3">
+        <div className="card stack sm"><div className="label">Spent this month</div><div className="score">{money(mo.costMinor, cur)}</div>
+          <span className="meter"><i style={{ width: `${Math.min(100, (held / Math.max(1, mo.spend.total.limitMinor)) * 100)}%` }} /></span>
+          <span className="small muted">{money(mo.spend.total.reservedMinor, cur)} held for running work · limit {money(mo.spend.total.limitMinor, cur)}</span></div>
+        <div className="card stack sm"><div className="label">Per qualified opportunity</div><div className="score">{mo.costPerQualifiedMinor === null ? '—' : money(mo.costPerQualifiedMinor, cur)}</div></div>
+        <div className="card stack sm"><div className="label">Per won deal</div><div className="score">{mo.costPerWonDealMinor === null ? '—' : money(mo.costPerWonDealMinor, cur)}</div></div>
+      </div>
       <div className="grid-3">
         <div className="card"><div className="label">Calls</div><div className="score" style={{ marginTop: 10 }}>{total.calls}</div></div>
         <div className="card"><div className="label">Tokens</div><div className="score" style={{ marginTop: 10 }}>{total.tokens.toLocaleString()}</div></div>

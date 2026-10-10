@@ -24,12 +24,15 @@ const NAV: { group: string; items: { to: string; label: string; end?: boolean }[
   { group: 'Trust', items: [
     { to: '/app/suppressions', label: 'Do-not-contact' },
     { to: '/app/audit', label: 'Audit log' },
-    { to: '/app/usage', label: 'AI usage' },
+    { to: '/app/usage', label: 'Usage & budget' },
   ] },
 ]
 
+// operators of the platform (ADMIN_EMAILS) also see the operations console
+const OPS: (typeof NAV)[number] = { group: 'Platform', items: [{ to: '/app/ops', label: 'Operations' }] }
+
 export default function AppLayout() {
-  const { ready, user, org, organizations, switchOrg, logout } = useAuth()
+  const { ready, user, org, organizations, switchOrg, logout, isPlatformAdmin } = useAuth()
   const [open, setOpen] = useState(false)
   const [pending, setPending] = useState(0)
   const loc = useLocation()
@@ -60,7 +63,7 @@ export default function AppLayout() {
       {open && <div className="scrim" onClick={() => setOpen(false)} />}
       <aside className={`side ${open ? 'open' : ''}`}>
         <NavLink to="/" aria-label="Home" style={{ padding: '0 6px' }}><Logo dark /></NavLink>
-        {NAV.map((g) => (
+        {(isPlatformAdmin ? [...NAV, OPS] : NAV).map((g) => (
           <nav className="side-group" key={g.group} aria-label={g.group}>
             <div className="label">{g.group}</div>
             {g.items.map((i) => (

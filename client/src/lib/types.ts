@@ -282,7 +282,7 @@ export interface PolicyConfig {
   qualification: { minimumScore: number; minimumEvidenceCoverage: number; reviewScore: number }
   pricing: { currency: string; minimumDealValueMinor: number; maximumDiscountPercent: number; maximumDealValueMinor: number; taxBasisPoints: number; proposalValidityDays: number }
   proposals: { autoSend: boolean }
-  budgets: { maxLlmCallsPerDay: number }
+  budgets: { maxLlmCallsPerDay: number; monthlySpendMinor: number; maxResearchPerDay: number; maxConcurrentResearch: number; maxConcurrentBuilds: number; artifactStorageBytes: number }
   prototypes: { enabled: boolean; autoBuild: boolean; costPerAttemptMinor: number; maxAttempts: number; maxPerPrototypeMinor: number; monthlyBudgetMinor: number; previewDays: number }
   retention: { messageDays: number; auditDays: number }
 }

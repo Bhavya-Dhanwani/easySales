@@ -7,6 +7,7 @@ interface AuthState {
   user: User | null
   organizations: OrgSummary[]
   org: OrgSummary | null
+  isPlatformAdmin: boolean
   login(email: string, password: string): Promise<User>
   signup(input: { name: string; email: string; password: string; organizationName?: string }): Promise<User>
   verify(otp: string): Promise<void>
@@ -24,10 +25,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [organizations, setOrganizations] = useState<OrgSummary[]>([])
   const [orgId, setOrgState] = useState<string | null>(getOrgId())
+  const [isPlatformAdmin, setAdmin] = useState(false)
 
   const loadMe = useCallback(async () => {
-    const me = await api<{ user: User; organizations: OrgSummary[] }>('/auth/me')
+    const me = await api<{ user: User; organizations: OrgSummary[]; isPlatformAdmin?: boolean }>('/auth/me')
     setUser(me.user)
+    setAdmin(Boolean(me.isPlatformAdmin))
     setOrganizations(me.organizations)
     // keep a valid active organization selected
     const current = getOrgId()
@@ -57,6 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user,
     organizations,
     org: organizations.find((o) => o.id === orgId) ?? organizations[0] ?? null,
+    isPlatformAdmin,
     login: async (email, password) => start(await api<SessionData>('/auth/login', { body: { email, password } })),
     signup: async (input) => start(await api<SessionData>('/auth/signup', { body: input })),
     verify: async (otp) => { await start(await api<SessionData>('/auth/verify-email', { body: { otp } })) },
@@ -68,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     switchOrg: (id) => { setOrgId(id); setOrgState(id) },
     reload: loadMe,
-  }), [ready, user, organizations, orgId, start, loadMe])
+  }), [ready, user, organizations, orgId, start, loadMe, isPlatformAdmin])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

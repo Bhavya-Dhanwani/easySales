@@ -13,6 +13,10 @@ Copy `server/.env.example` and set at least:
 | `SEND_MAIL`, `SMTP_*`, `SENDING_USER` | account emails (verification, password reset). Outreach is sent through each tenant's connected account; production refuses to send outreach without one |
 | `ENCRYPTION_KEY` | ≥ 32 random chars; encrypts stored email credentials (the API refuses to start in production without it) |
 | `PREVIEW_BASE_URL` | recommended; a separate domain (for example `https://preview.yourdomain.com`) pointed at the API, used for prototype preview links. Defaults to `FRONTEND_URL` |
+| `ADMIN_EMAILS` | comma-separated operator emails for `/api/admin/*` and the Operations page |
+| `BILLING_CURRENCY`, `LLM_COST_INPUT_PER_MTOK_MINOR`, `LLM_COST_OUTPUT_PER_MTOK_MINOR`, `EMAIL_COST_MINOR` | unit prices used to meter spend (set them to your real provider prices) |
+| `GLOBAL_DAILY_SPEND_CAP_MINOR` | optional emergency cap on total daily spend across all tenants |
+| `API_RATE_LIMIT_PER_MIN`, `TENANT_RATE_LIMIT_PER_MIN`, `QUEUE_BACKPRESSURE` | per-IP and per-workspace request limits; queue depth above which follow-ups and campaign enrolment wait |
 | `ALERT_WEBHOOK_URL` | optional; Slack or Discord incoming webhook |
 | `RUN_WORKER` | `false` on API instances when you run a separate worker |
 
@@ -22,7 +26,8 @@ Keep secrets in your platform's secret manager, not in the image (`.dockerignore
 1. CI on `main` must be green: audit, typecheck, tests, lint, build, image.
 2. Build and tag with the commit SHA: `docker build -t registry/easysales:<sha> .`
 3. Roll out the **worker** first, then the **API** (`docker compose up -d --build` for a single host). Schema changes are additive, and Mongoose builds new indexes on boot.
-4. Smoke-check `GET /api/health`, log in, and open the Leads page.
+4. Smoke-check `GET /api/health/ready` (point the platform's health check at it), log in, and open the Leads page.
+5. Operating the pilot (alerts, incidents, flags, restore drill): see [RUNBOOK.md](RUNBOOK.md).
 
 ## Rollback
 - Images are immutable per SHA: redeploy the previous tag (`docker compose` with `image: registry/easysales:<previous-sha>`).

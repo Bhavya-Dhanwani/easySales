@@ -248,7 +248,24 @@ function ProposalCard({ p, onChange }: { p: Proposal; onChange: () => void }) {
       </div>
       {p.revisionNote && <span className="small muted">Revision: {p.revisionNote}</span>}
       {issues && (issues.length ? <div className="chips">{issues.map((i) => <span key={i} className="badge warn plain">{i}</span>)}</div> : <span className="small" style={{ color: 'var(--forest-3)' }}>✓ Matches today’s price book, requirements and policy</span>)}
-      {p.acceptance?.acceptedBy && <span className="small">Accepted by <b>{p.acceptance.acceptedBy}</b> · {p.acceptance.evidence} · contract and payment are separate steps</span>}
+      {p.acceptance?.acceptedBy && (
+        <div className="row-flex between">
+          <span className="small">Accepted by <b>{p.acceptance.acceptedBy}</b> · {p.acceptance.evidence} · contract and payment are separate steps</span>
+          <button className="btn sm lime" onClick={async () => {
+            try {
+              const r = await api<{ package: unknown }>(`/v1/opportunities/${p.leadId}/handoff`, { body: {} })
+              // the handoff package goes to whatever delivery process the business uses
+              const a = document.createElement('a')
+              a.href = URL.createObjectURL(new Blob([JSON.stringify(r.package, null, 2)], { type: 'application/json' }))
+              a.download = `handoff-v${p.version}.json`
+              a.click()
+              URL.revokeObjectURL(a.href)
+              toast('Deal handed over · marked won')
+              onChange()
+            } catch (e) { toast((e as Error).message, true) }
+          }}>Hand over to delivery</button>
+        </div>
+      )}
       {p.status === 'generating' ? <Spinner label="The proposal agent is writing" /> : (
         <details open={!final}>
           <summary className="small muted">Document · price book v{p.priceBookVersion} · requirements v{p.requirementsVersion || '—'}{p.expiresAt ? ` · valid until ${new Date(p.expiresAt).toLocaleDateString()}` : ''}</summary>
