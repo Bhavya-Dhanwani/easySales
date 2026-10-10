@@ -12,6 +12,7 @@ Copy `server/.env.example` and set at least:
 | `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL_SMART`, `LLM_MODEL_FAST` | AI gateway |
 | `SEND_MAIL`, `SMTP_*`, `SENDING_USER` | account emails (verification, password reset). Outreach is sent through each tenant's connected account; production refuses to send outreach without one |
 | `ENCRYPTION_KEY` | ≥ 32 random chars; encrypts stored email credentials (the API refuses to start in production without it) |
+| `PREVIEW_BASE_URL` | recommended; a separate domain (for example `https://preview.yourdomain.com`) pointed at the API, used for prototype preview links. Defaults to `FRONTEND_URL` |
 | `ALERT_WEBHOOK_URL` | optional; Slack or Discord incoming webhook |
 | `RUN_WORKER` | `false` on API instances when you run a separate worker |
 
@@ -37,4 +38,5 @@ MongoDB Atlas (`MONGO_URI=mongodb+srv://…`). Backups are handled by Atlas clou
 - **At rest:** MongoDB Atlas encrypts storage by default.
 - **Retention:** message bodies and audit events older than the policy's `retention.messageDays` / `auditDays` are deleted daily by the worker. LangGraph checkpoints expire after 30 days.
 - **Alerts:** failed workflows, an exhausted AI budget, reached send caps and uncertain deliveries are written to the audit log as `alert.*` and posted to `ALERT_WEBHOOK_URL`.
+- **Prototypes:** the builder agent only fills content slots of fixed templates. Code renders and HTML-escapes the content, and no generated code is ever executed, so no build sandbox is needed. Before publication, QA rejects active markup, links, contact details and prohibited claims. Previews are served with a CSP `sandbox` (opaque origin, no scripts) and expire automatically. If templates ever need real builds (npm, bundlers), run them in a gVisor/Firecracker sandbox with no network or secrets before enabling that.
 - **Compliance:** consent basis, opt-out suppression and quiet hours are enforced in code. A legal review per market (e.g. TRAI/DPDP in India, GDPR, CAN-SPAM) is still the operator's responsibility.

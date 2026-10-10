@@ -170,7 +170,7 @@ export interface Approval {
   targetType: string
   targetId: string
   leadId?: string
-  payload: { to?: string; subject?: string; body?: string; totalMinor?: number; discountPercent?: number }
+  payload: { to?: string; subject?: string; body?: string; totalMinor?: number; discountPercent?: number; templateId?: string; requirementsVersion?: number; budgetMinorUnits?: number; currency?: string }
   payloadHash: string
   reasons: string[]
   status: string
@@ -182,13 +182,67 @@ export interface Approval {
 export interface Proposal {
   _id: string
   leadId: string
-  items: { name: string; priceMinor: number }[]
+  version: number
+  revisionNote?: string
+  requirementsVersion: number
+  priceBookVersion: number
+  prototypeId?: string
+  items: { name: string; quantity?: number; unitPriceMinor?: number; priceMinor: number }[]
   currency: string
   subtotalMinor: number
   discountPercent: number
+  discountMinor: number
+  taxBasisPoints: number
+  taxMinor: number
   totalMinor: number
+  paymentSchedule: { label: string; percent: number; amountMinor: number }[]
   body: string
   status: string
+  approvedBy?: string
+  sentAt?: string
+  expiresAt?: string
+  acceptance?: { acceptedBy?: string; acceptedAt?: string; evidence?: string }
+  createdAt: string
+}
+
+export type FeatureStatus = 'confirmed' | 'assumed' | 'needs_clarification'
+
+export interface RequirementsDoc {
+  _id: string
+  version: number
+  createdBy: string
+  changeSummary: string
+  createdAt: string
+  sourceMessageIds: string[]
+  requirements: {
+    title: string
+    projectType: string
+    problemStatement: string
+    targetUsers: string[]
+    features: { name: string; description: string; priority: 'must' | 'should' | 'could'; status: FeatureStatus }[]
+    design: { brandColors: string[]; visualDirection: string; referenceUrls: string[] }
+    constraints: { budgetMinorUnits: number | null; currency: string; targetDate: string | null; technologies: string[] }
+    acceptanceCriteria: string[]
+    openQuestions: string[]
+    sourceMessageIds: string[]
+  }
+}
+
+export interface Prototype {
+  _id: string
+  requirementsVersion: number
+  templateId: string
+  status: string
+  budgetMinorUnits: number
+  costMinorUnits: number
+  currency: string
+  previewUrl?: string
+  previewExpiresAt?: string
+  qaReport?: { buildPassed?: boolean; testsPassed?: boolean; securityPassed?: boolean; findings: string[] }
+  attempts: number
+  maxAttempts: number
+  failureCode?: string
+  approvalId?: string
   createdAt: string
 }
 
@@ -206,6 +260,9 @@ export interface BusinessProfile {
   prohibitedClaims: string[]
   caseStudies: { title: string; summary: string }[]
   meetingLink?: string
+  terms?: string
+  revisionRounds?: number
+  paymentSchedule?: { label: string; percent: number }[]
   scoringWeights?: Record<string, number>
   version?: number
 }
@@ -223,9 +280,10 @@ export interface PolicyConfig {
     quietHours: { enabled: boolean; start: string; end: string; timezone: string }
   }
   qualification: { minimumScore: number; minimumEvidenceCoverage: number; reviewScore: number }
-  pricing: { currency: string; minimumDealValueMinor: number; maximumDiscountPercent: number }
+  pricing: { currency: string; minimumDealValueMinor: number; maximumDiscountPercent: number; maximumDealValueMinor: number; taxBasisPoints: number; proposalValidityDays: number }
   proposals: { autoSend: boolean }
   budgets: { maxLlmCallsPerDay: number }
+  prototypes: { enabled: boolean; autoBuild: boolean; costPerAttemptMinor: number; maxAttempts: number; maxPerPrototypeMinor: number; monthlyBudgetMinor: number; previewDays: number }
   retention: { messageDays: number; auditDays: number }
 }
 

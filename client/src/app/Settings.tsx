@@ -67,6 +67,8 @@ export function Business() {
         idealCustomerProfile: p!.idealCustomerProfile, brandVoice: p!.brandVoice,
         approvedClaims: p!.approvedClaims, prohibitedClaims: p!.prohibitedClaims,
         caseStudies: p!.caseStudies.filter((c) => c.title || c.summary),
+        terms: p!.terms ?? '', revisionRounds: p!.revisionRounds ?? 2,
+        ...(p!.paymentSchedule?.length ? { paymentSchedule: p!.paymentSchedule.filter((x) => x.label && x.percent > 0) } : {}),
         ...(criteria.length ? { scoringWeights: Object.fromEntries(criteria.map((c) => [c.id, weights[c.id] ?? 0])) } : {}),
       }
       await api('/v1/business-profile', { method: 'PUT', body })
@@ -90,6 +92,19 @@ export function Business() {
         <label className="field"><span>What you do</span><textarea className="textarea" placeholder="Who you help, how, and what makes you different." value={p.description} onChange={(e) => set('description', e.target.value)} /></label>
         <label className="field"><span>Brand voice</span><input className="input" value={p.brandVoice} onChange={(e) => set('brandVoice', e.target.value)} /></label>
         <label className="field"><span>Meeting booking link</span><input className="input" placeholder="https://cal.com/you/20min" value={p.meetingLink ?? ''} onChange={(e) => set('meetingLink', e.target.value)} /><small>Shared when a prospect asks to meet.</small></label>
+      </section>
+
+      <section className="card stack">
+        <div className="label">Proposal terms</div>
+        <label className="field"><span>Approved commercial terms</span><textarea className="textarea" style={{ minHeight: 120 }} placeholder="Copied word for word into every proposal. The AI never edits it." value={p.terms ?? ''} onChange={(e) => set('terms', e.target.value)} /></label>
+        <div className="grid-3">
+          <label className="field"><span>Revision rounds included</span><input className="input" type="number" min={0} max={20} value={p.revisionRounds ?? 2} onChange={(e) => set('revisionRounds', Math.max(0, Math.round(Number(e.target.value) || 0)))} /></label>
+          <label className="field" style={{ gridColumn: 'span 2' }}><span>Payment schedule (label:percent, comma separated)</span>
+            <input className="input" placeholder="On signing:50, On delivery:50" defaultValue={(p.paymentSchedule ?? []).map((x) => `${x.label}:${x.percent}`).join(', ')}
+              onBlur={(e) => set('paymentSchedule', e.target.value.split(',').map((x) => x.split(':')).filter((x) => x.length === 2).map(([l, n]) => ({ label: l.trim(), percent: Math.round(Number(n)) })))} />
+            <small>Must add up to 100. Amounts are computed from the final total; the last instalment takes any rounding.</small>
+          </label>
+        </div>
       </section>
 
       <section className="card stack">
@@ -209,6 +224,9 @@ export function Policies() {
           <label className="field"><span>Currency</span><input className="input" maxLength={3} value={c.pricing.currency} onChange={(e) => setC({ ...c, pricing: { ...c.pricing, currency: e.target.value.toUpperCase() } })} /></label>
           <label className="field"><span>Max discount without approval (%)</span><input className="input" type="number" min={0} max={100} value={c.pricing.maximumDiscountPercent} onChange={(e) => setC({ ...c, pricing: { ...c.pricing, maximumDiscountPercent: Math.min(100, Number(e.target.value) || 0) } })} /></label>
           <label className="field"><span>Minimum deal value</span><input className="input" type="number" min={0} value={c.pricing.minimumDealValueMinor / 100} onChange={(e) => setC({ ...c, pricing: { ...c.pricing, minimumDealValueMinor: num(e.target.value) * 100 } })} /></label>
+          <label className="field"><span>Maximum deal value</span><input className="input" type="number" min={0} value={(c.pricing.maximumDealValueMinor ?? 0) / 100} onChange={(e) => setC({ ...c, pricing: { ...c.pricing, maximumDealValueMinor: num(e.target.value) * 100 } })} /></label>
+          <label className="field"><span>Tax (%)</span><input className="input" type="number" min={0} max={100} step={0.01} value={(c.pricing.taxBasisPoints ?? 0) / 100} onChange={(e) => setC({ ...c, pricing: { ...c.pricing, taxBasisPoints: Math.min(10000, Math.round((Number(e.target.value) || 0) * 100)) } })} /></label>
+          <label className="field"><span>Proposals valid for (days)</span><input className="input" type="number" min={1} max={180} value={c.pricing.proposalValidityDays ?? 30} onChange={(e) => setC({ ...c, pricing: { ...c.pricing, proposalValidityDays: Math.min(180, Math.max(1, num(e.target.value))) } })} /></label>
         </div>
         <label className="check"><input type="checkbox" checked={c.proposals.autoSend} onChange={(e) => setC({ ...c, proposals: { autoSend: e.target.checked } })} /> Send in-policy proposals without approval</label>
       </section>
@@ -217,6 +235,19 @@ export function Policies() {
         <div className="label">AI budget</div>
         <label className="field" style={{ maxWidth: 280 }}><span>Max AI calls per day</span><input className="input" type="number" min={0} value={c.budgets.maxLlmCallsPerDay} onChange={(e) => setC({ ...c, budgets: { maxLlmCallsPerDay: num(e.target.value) } })} /><small>Runs stop (and are marked failed) when the budget is used up.</small></label>
       </section>
+
+      {c.prototypes && <section className="card stack">
+        <div className="label">Demo prototypes</div>
+        <label className="check"><input type="checkbox" checked={c.prototypes.enabled} onChange={(e) => setC({ ...c, prototypes: { ...c.prototypes, enabled: e.target.checked } })} /> Allow demo builds from approved templates</label>
+        <label className="check"><input type="checkbox" checked={c.prototypes.autoBuild} onChange={(e) => setC({ ...c, prototypes: { ...c.prototypes, autoBuild: e.target.checked } })} /> Build without approval when inside budget</label>
+        <div className="grid-3">
+          <label className="field"><span>Cost per attempt</span><input className="input" type="number" min={0} value={c.prototypes.costPerAttemptMinor / 100} onChange={(e) => setC({ ...c, prototypes: { ...c.prototypes, costPerAttemptMinor: num(e.target.value) * 100 } })} /></label>
+          <label className="field"><span>Attempts (incl. repairs)</span><input className="input" type="number" min={1} max={3} value={c.prototypes.maxAttempts} onChange={(e) => setC({ ...c, prototypes: { ...c.prototypes, maxAttempts: Math.min(3, Math.max(1, num(e.target.value))) } })} /></label>
+          <label className="field"><span>Preview link lifetime (days)</span><input className="input" type="number" min={1} max={30} value={c.prototypes.previewDays} onChange={(e) => setC({ ...c, prototypes: { ...c.prototypes, previewDays: Math.min(30, Math.max(1, num(e.target.value))) } })} /></label>
+          <label className="field"><span>Limit per prototype</span><input className="input" type="number" min={0} value={c.prototypes.maxPerPrototypeMinor / 100} onChange={(e) => setC({ ...c, prototypes: { ...c.prototypes, maxPerPrototypeMinor: num(e.target.value) * 100 } })} /><small>Above this a human approves the build.</small></label>
+          <label className="field"><span>Monthly budget</span><input className="input" type="number" min={0} value={c.prototypes.monthlyBudgetMinor / 100} onChange={(e) => setC({ ...c, prototypes: { ...c.prototypes, monthlyBudgetMinor: num(e.target.value) * 100 } })} /><small>Builds are refused once it is used up.</small></label>
+        </div>
+      </section>}
 
       <section className="card stack">
         <div className="label">Data retention</div>

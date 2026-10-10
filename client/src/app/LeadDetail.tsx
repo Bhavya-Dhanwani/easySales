@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { api, idempotencyKey } from '../lib/api'
-import { ago, human, money } from '../lib/format'
-import { STAGES, type Approval, type BusinessProfile, type Conversation, type Lead, type Message, type Proposal, type Workflow } from '../lib/types'
+import { ago, human } from '../lib/format'
+import { STAGES, type Approval, type Conversation, type Lead, type Message, type Proposal, type Workflow } from '../lib/types'
 import { Badge, Empty, PageHead, Spinner, useLoad, useToast } from '../components/ui'
+import OpportunityWorkspace from './Opportunity'
 
 interface LeadBundle {
   lead: Lead
@@ -31,41 +32,6 @@ function Timeline({ wf }: { wf: Workflow }) {
           </div>
         </div>
       ))}
-    </div>
-  )
-}
-
-function ProposalBuilder({ leadId, onCreated }: { leadId: string; onCreated: () => void }) {
-  const toast = useToast()
-  const { data } = useLoad(() => api<{ profile: BusinessProfile | null }>('/v1/business-profile'), [])
-  const [picked, setPicked] = useState<string[]>([])
-  const [discount, setDiscount] = useState(0)
-  const [busy, setBusy] = useState(false)
-  const services = data?.profile?.services ?? []
-  if (!data) return <Spinner />
-  if (!services.length) return <p className="small muted">Add services with prices in <Link to="/app/business">Business brain</Link> to build proposals.</p>
-  const subtotal = services.filter((s) => picked.includes(s.name)).reduce((a, s) => a + s.basePriceMinor, 0)
-  return (
-    <div className="stack">
-      {services.map((s) => (
-        <label key={s.name} className="check">
-          <input type="checkbox" checked={picked.includes(s.name)} onChange={(e) => setPicked(e.target.checked ? [...picked, s.name] : picked.filter((p) => p !== s.name))} />
-          <span style={{ flex: 1 }}>{s.name}</span><span className="mono">{money(s.basePriceMinor)}</span>
-        </label>
-      ))}
-      <label className="field"><span>Discount %</span><input className="input" type="number" min={0} max={100} step={0.5} value={discount} onChange={(e) => setDiscount(Number(e.target.value))} /></label>
-      <div className="row-flex between">
-        <span className="small muted">Estimated total <b className="mono" style={{ color: 'var(--ink)' }}>{money(Math.round(subtotal * (1 - discount / 100)))}</b></span>
-        <button className="btn sm" disabled={!picked.length || busy} onClick={async () => {
-          setBusy(true)
-          try {
-            await api(`/v1/leads/${leadId}/proposals`, { body: { services: picked, discountPercent: discount } })
-            toast('Proposal agent is writing…')
-            setPicked([])
-            onCreated()
-          } catch (e) { toast((e as Error).message, true) } finally { setBusy(false) }
-        }}>Generate proposal</button>
-      </div>
     </div>
   )
 }
@@ -116,7 +82,6 @@ export default function LeadDetail() {
   const toast = useToast()
   const [inbound, setInbound] = useState('')
   const [reply, setReply] = useState('')
-  const [showBuilder, setShowBuilder] = useState(false)
 
   const { data, loading, reload } = useLoad(
     () => api<LeadBundle>(`/v1/leads/${id}`),
@@ -127,7 +92,7 @@ export default function LeadDetail() {
   if (loading) return <Spinner label="Loading lead" />
   if (!data) return <Empty title="Lead not found." action={<Link className="btn" to="/app/leads">Back to leads</Link>} />
 
-  const { lead, conversation, messages, workflows, proposals, approvals } = data
+  const { lead, conversation, messages, workflows, approvals } = data
   const active = workflows.find((w) => ['queued', 'running', 'waiting_approval'].includes(w.status))
   const latest = workflows[0]
 
@@ -257,26 +222,7 @@ export default function LeadDetail() {
             )}
           </section>
 
-          <section className="stack">
-            <div className="row-flex between"><span className="h2">Proposals</span><button className="btn ghost sm" onClick={() => setShowBuilder(!showBuilder)}>{showBuilder ? 'Close' : 'New proposal'}</button></div>
-            {showBuilder && <div className="card"><ProposalBuilder leadId={lead._id} onCreated={() => { setShowBuilder(false); reload() }} /></div>}
-            {proposals.length === 0 && !showBuilder && <p className="small muted" style={{ margin: 0 }}>No proposals yet. Prices come from your service catalogue; the agent writes the narrative.</p>}
-            {proposals.map((p) => (
-              <div key={p._id} className="card stack">
-                <div className="row-flex between">
-                  <span className="row-flex"><Badge status={p.status} /><span className="mono">{money(p.totalMinor, p.currency)}</span>{p.discountPercent > 0 && <span className="small muted">incl. {p.discountPercent}% discount</span>}</span>
-                  <span className="row-flex">
-                    {p.status === 'draft' && <button className="btn sm" onClick={() => act(() => api(`/v1/proposals/${p._id}/send`, { method: 'POST' }), 'Proposal submitted')}>Send</button>}
-                    {p.status === 'sent' && <>
-                      <button className="btn sm" onClick={() => act(() => api(`/v1/proposals/${p._id}`, { method: 'PATCH', body: { status: 'accepted' } }), 'Marked accepted')}>Accepted</button>
-                      <button className="btn sm ghost" onClick={() => act(() => api(`/v1/proposals/${p._id}`, { method: 'PATCH', body: { status: 'rejected' } }), 'Marked rejected')}>Rejected</button>
-                    </>}
-                  </span>
-                </div>
-                {p.status === 'generating' ? <Spinner label="The proposal agent is writing" /> : <pre className="body">{p.body}</pre>}
-              </div>
-            ))}
-          </section>
+          <OpportunityWorkspace leadId={lead._id} />
         </div>
 
         <aside className="stack lg" style={{ position: 'sticky', top: 20 }}>

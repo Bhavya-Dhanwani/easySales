@@ -161,6 +161,18 @@ router.get("/prototypes/:id/qa-report", authorize("proposals.read"), async (req:
     return Ok(res, "QA report", { qaReport: prototype.qaReport ?? null, attempts: prototype.attempts, maxAttempts: prototype.maxAttempts, failureCode: prototype.failureCode ?? null });
 });
 
+/*
+    @route GET /api/v1/prototypes/:id/artifact
+    @desc The built page for internal review before publication (the client renders it in a sandboxed iframe)
+*/
+router.get("/prototypes/:id/artifact", authorize("proposals.read"), async (req: Request, res: Response) => {
+    const ctx = ctxOf(req);
+    const p = await Prototype.findOne({ organizationId: ctx.organizationId, _id: oid(req.params.id) }).select("+artifactHtml").lean();
+    if (!p) throw new NotFound("Prototype not found");
+    if (!p.artifactHtml) throw new Conflict("No built page for this prototype");
+    return Ok(res, "Artifact", { html: p.artifactHtml, checksum: p.artifactChecksum });
+});
+
 router.post("/prototypes/:id/cancel", authorize("proposals.write"), async (req: Request, res: Response) => {
     const { ctx, prototype } = await ownPrototype(req);
     return Ok(res, "Prototype cancelled", { prototype: await cancelPrototype(ctx.organizationId, prototype._id, ctx.userId) });

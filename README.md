@@ -11,7 +11,9 @@ lead ─► Research agent ─► Qualification agent ─► Outreach agent ─�
           (SSRF-safe          (LLM score +          (approved           (deterministic, ├─► human approval (LangGraph interrupt)
            web fetch)          hard rules)           claims only)        versioned)      └─► denied + audited
 reply ──► Conversation agent ─► requirements → CRM ─► reply draft ─► Policy engine ─► …
-proposal ─► deterministic pricing ─► Proposal agent (prose only) ─► pricing policy ─► approval / send
+requirements ◄─ Requirements agent (versioned, confirmed vs assumed, cited messages)
+demo ─► eligibility + budget policy ─► Builder agent (content only) ─► approved template ─► QA ─► review ─► expiring sandboxed preview
+proposal ─► price book + tax + payment schedule (code) ─► Proposal agent (scope & prose) ─► validate ─► approval bound to content ─► send ─► revise = new version
 ```
 
 - **Agents** (`server/src/agents`): LangChain over any OpenAI-compatible endpoint (LiteLLM, OpenAI…), zod-validated structured output, untrusted content wrapped and never obeyed.
@@ -78,7 +80,7 @@ Each workspace connects its own sending account (SMTP) under **Settings → Emai
 
 ## Docs
 
-- [docs/API.md](docs/API.md): endpoint reference (Sprint 1 + 2)
+- [docs/API.md](docs/API.md): endpoint reference (Sprints 1–4)
 - [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): environment, deploy, rollback, security
 
 ## API

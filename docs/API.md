@@ -57,6 +57,30 @@ Scoring: `score = Σ weight × {match 1, partial .5, mismatch 0, unknown 0} / Σ
 **Provider webhook.** `POST /api/webhooks/email/:integrationId` with header `X-EasySales-Signature: <hex HMAC-SHA256 of the raw body>` (the account's webhook secret) and body `{ events: [...] }`:
 `{ type: "inbound", id, messageId?, from, subject, text, inReplyTo?, references?, autoSubmitted? }` or `{ type: "delivered" | "bounced" | "complained", id, providerMessageId, bounceType?: "hard" | "soft" }`. Events are stored (deduplicated by `id`) and acknowledged with 202, then processed by the worker. The organization always comes from the integration, never from the payload. Outbound mail uses `<messageId@sender-domain>` as its Message-ID, so replies thread through `In-Reply-To`.
 
+## Requirements, prototypes & proposals (Sprint 4)
+The opportunity id is the lead id. Build and extraction requests answer `202 Accepted`.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/v1/opportunities/:id` | latest requirements + version list, prototypes, proposal versions, approved templates, monthly prototype budget |
+| GET | `/v1/opportunities/:id/timeline` | audit history of the opportunity, its prototypes and proposals |
+| POST | `/v1/opportunities/:id/requirements/extract` | requirements agent reads the conversation (needs at least one inbound message) and stores a new version |
+| GET | `/v1/opportunities/:id/requirements` | current version, or `?version=N` |
+| PUT | `/v1/opportunities/:id/requirements` | `{ requirements, changeSummary }` → new immutable version; `sourceMessageIds` must belong to this opportunity |
+| POST | `/v1/opportunities/:id/prototypes` | header `Idempotency-Key` required; `{ templateId? }`. Policy checks qualification, open questions, template and budgets: `202` (queued or awaiting approval) or `409 { reasons }` |
+| GET | `/v1/prototypes/:id`, `/qa-report`, `/artifact` | status and costs; build/test/security results; the built page for internal review |
+| POST | `/v1/prototypes/:id/cancel` · `/retry` | retry only failed builds, within budget |
+| POST | `/v1/prototypes/:id/publish` · `/expire` | reviewer role. Publishes only a QA-passed, checksum-verified build; returns an expiring `previewUrl`. Expire revokes the link and deletes the page |
+| POST | `/v1/opportunities/:id/proposals` | `{ services: (name \| { name, quantity })[], discountPercent, prototypeId? }` → new version priced from the current price book |
+| GET | `/v1/proposals/:id` · `/versions` | |
+| POST | `/v1/proposals/:id/validate` | stale price book, newer requirements, open questions, expiry and policy, as `issues` + `decision` |
+| POST | `/v1/proposals/:id/submit-approval` | approved by policy, or an approval bound to the hash of the exact content |
+| POST | `/v1/proposals/:id/send` | a draft is submitted first; an approved version is sent only if it still matches the approved hash |
+| POST | `/v1/proposals/:id/revisions` | `{ note, services?, discountPercent?, prototypeId? }` → new version; the old one becomes `superseded` |
+| POST | `/v1/proposals/:id/record-acceptance` | `{ acceptedBy, evidence, messageId? }`; sent, unexpired versions only. This records a commercial event, not a contract or payment |
+
+**Public preview.** `GET /api/preview/:token` serves the page with `Content-Security-Policy: sandbox; default-src 'none'; ...`: an opaque origin with no scripts, forms or remote resources. After expiry or revocation it returns `410`.
+
 ## Outreach, conversations, proposals (earlier sprints)
 `POST /v1/leads/:id/run` (research → qualify → outreach), `GET/POST /v1/approvals[/:id/approve|reject]`, `PATCH /v1/approvals/:id` (edit a draft), `GET /v1/conversations[/:id]`, `POST /v1/conversations/:id/inbound|reply`, `POST /v1/leads/:id/proposals`, `POST /v1/proposals/:id/send`, `PATCH /v1/proposals/:id`.
 
