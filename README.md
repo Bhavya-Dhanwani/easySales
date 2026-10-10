@@ -79,7 +79,7 @@ Point your mail provider's inbound webhook at `POST /api/webhooks/email/inbound`
 ## Docs
 
 - [docs/API.md](docs/API.md): endpoint reference (Sprint 1 + 2)
-- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): environment, deploy, rollback, backups, security
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): environment, deploy, rollback, security
 
 ## API
 

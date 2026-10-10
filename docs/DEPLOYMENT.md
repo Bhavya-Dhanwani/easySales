@@ -29,17 +29,12 @@ Keep secrets in your platform's secret manager, not in the image (`.dockerignore
 - Policies and business profiles are versioned. To roll back a bad policy, publish the previous version's values again (the history is under Autonomy & limits).
 - Workflows in flight resume from their LangGraph checkpoint after a restart. Messages stuck in `sending` become `uncertain` and are never resent blindly.
 
-## Backups and restore (tested)
-```bash
-scripts/db.sh backup  "mongodb+srv://…/easysales"     # gzip archive in backups/
-scripts/db.sh restore backups/<file> "mongodb://…/easysales"
-scripts/db.sh verify  "mongodb://…/easysales"         # backup → restore into <db>_restore_check → compare counts → drop
-```
-`verify` was run against the development database (34 documents restored, counts matched). On Atlas, also enable continuous cloud backups and run `verify` against a staging cluster monthly.
+## Database
+MongoDB Atlas (`MONGO_URI=mongodb+srv://…`). Backups are handled by Atlas cloud backups; enable them on the cluster.
 
 ## Security notes
 - **In transit:** terminate TLS at the load balancer. `helmet` sends HSTS, and the refresh cookie is `Secure` + `SameSite=None` in production.
-- **At rest:** use MongoDB Atlas (encrypted storage by default) or encrypted volumes. Backups in `backups/` are gitignored; store them in encrypted object storage.
+- **At rest:** MongoDB Atlas encrypts storage by default.
 - **Retention:** message bodies and audit events older than the policy's `retention.messageDays` / `auditDays` are deleted daily by the worker. LangGraph checkpoints expire after 30 days.
 - **Alerts:** failed workflows, an exhausted AI budget, reached send caps and uncertain deliveries are written to the audit log as `alert.*` and posted to `ALERT_WEBHOOK_URL`.
 - **Compliance:** consent basis, opt-out suppression and quiet hours are enforced in code. A legal review per market (e.g. TRAI/DPDP in India, GDPR, CAN-SPAM) is still the operator's responsibility.
