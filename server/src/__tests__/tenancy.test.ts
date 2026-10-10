@@ -33,6 +33,19 @@ test("auth: no enumeration, no verification bypass, private API needs verificati
     assert.equal(blocked.status, 403);
 });
 
+test("refresh rotates the session from the httpOnly cookie", async () => {
+    const owner = await createAccount("Refresher");
+    const login = await request(app).post("/api/auth/login").send({ email: owner.email, password: owner.password });
+    const cookie = login.headers["set-cookie"];
+    assert.ok(cookie, "refresh cookie is set");
+    const refreshed = await request(app).post("/api/auth/refresh").set("Cookie", cookie);
+    assert.equal(refreshed.status, 200);
+    assert.ok(refreshed.body.data.accessToken);
+    // the old refresh token is single-use
+    const replay = await request(app).post("/api/auth/refresh").set("Cookie", cookie);
+    assert.equal(replay.status, 401);
+});
+
 test("tenant isolation: one organization can never see or touch another's data", async () => {
     const a = await createAccount("Alpha");
     const b = await createAccount("Beta");

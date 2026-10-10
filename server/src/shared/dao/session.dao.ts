@@ -22,7 +22,7 @@ class SessionDao {
         return await this.SessionModel.findOne({
             refreshToken: refreshToken,
             _id: sessionId
-        }).populate("userId", "-password -__v");
+        });
     }
 
     // function to delete a session by refresh token
