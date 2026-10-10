@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    env_file:
+      - ./server/.env
+    environment:
+      - PORT=5000
+      - MONGODB_URI=mongodb://mongodb:27017/clientpipe
+    volumes:
+      - ./server:/app/server
+      - ./scripts:/app/scripts
+      - /app/server/node_modules
+    command: node /app/scripts/watch-package.js server
+    depends_on:
+      - mongodb
+    restart: always
+
+  client:
+    image: node:20-alpine
+    working_dir: /app/client
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./client:/app/client
+      - ./scripts:/app/scripts
+      - /app/client/node_modules
+    command: node /app/scripts/watch-package.js client
+    restart: always
+
+  mongodb:
+    image: mongo:latest
+    command: mongod --quiet
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    restart: always
+
+volumes:
+  mongodb_data:
