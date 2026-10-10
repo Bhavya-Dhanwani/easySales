@@ -22,6 +22,13 @@ class TokenDAO {
         return token;
     }
 
+    // method to find an unexpired token of a given type (optionally bound to an email)
+    async findValidToken(value: string, type: "otp" | "reset" | "invitation", email?: string) {
+        const filter: Record<string, unknown> = { value, type, expiresAt: { $gt: new Date() } };
+        if (email) filter.email = email;
+        return await this.tokenModel.findOne(filter);
+    }
+
     // method to delete a token by its value
     async deleteTokenByValue(value: string) {
         const result = await this.tokenModel.deleteOne({ value: value });

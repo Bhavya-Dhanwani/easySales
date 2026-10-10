@@ -14,6 +14,8 @@ import createSession from "../../../shared/utils/createSession.util.js";
 import { getGoogleAuthorizationUrl, getGoogleUserFromCode, verifyGoogleToken } from "../../../shared/utils/googleAuth.util.js";
 import sendMail from "../../../shared/utils/sendMail.util.js";
 import { generateOTPToken, generateResetPasswordToken } from "../../../shared/utils/token.util.js";
+import BadRequest from "../../../shared/errors/BadRequest.error.js";
+import { activateInvitations, createOrganizationForUser, listUserOrganizations } from "../../../shared/tenancy/organization.service.js";
 
 // class to handle public authentication operations
 class AuthController {
@@ -35,16 +37,19 @@ class AuthController {
 	// signup a new user
 	signup = async (req: SignupRequest, res: Response) => {
 		// getting the user from the request body
-		const { name, email, password, token } = req.body;
+		const { name, email, password, organizationName } = req.body;
 
-		// creating a new user using the user dao
+		// creating a new user using the user dao (always unverified until the OTP is confirmed)
 		const user = await this.userDao.createUser({
 			name,
-			email,
+			email: email.toLowerCase(),
 			password,
 			providers: ["local"],
-			isVerified: token ? true : false,
+			isVerified: false,
 		});
+
+		// every new account starts with its own organization (tenant)
+		await createOrganizationForUser(user, organizationName || `${name}'s workspace`);
 
 		// creating session and tokens
 		const { sanitizedUser, accessToken } = await createSession(
@@ -82,11 +87,11 @@ class AuthController {
 		const { email, password } = req.body;
 
 		// finding the user using the user dao
-		const user = await this.userDao.findUserByEmail(email);
+		const user = await this.userDao.findUserByEmail(email.toLowerCase());
 
-		// checking if the user exists
+		// same error for unknown email and wrong password, so accounts cannot be enumerated
 		if (!user) {
-			throw new NotFound("User not found");
+			throw new Unauthorized("Invalid email or password");
 		}
 
 		// checking if the password is valid
@@ -114,7 +119,36 @@ class AuthController {
 	// get authenticated user profile
 	me = async (req: AuthenticatedRequest, res: Response) => {
 		// returning the authenticated user profile
-		return Ok(res, "User profile fetched successfully", { user: req.user });
+		const organizations = await listUserOrganizations(String(req.user?.userId));
+		return Ok(res, "User profile fetched successfully", { user: req.user, organizations });
+	};
+
+	// verify the email address with the OTP sent at signup
+	verifyEmail = async (req: AuthenticatedRequest, res: Response) => {
+		const { otp } = req.body as { otp: string };
+		const email = String(req.user?.email || "").toLowerCase();
+
+		const token = await this.tokenDao.findValidToken(String(otp), "otp", email);
+		if (!token) throw new BadRequest("Invalid or expired code");
+
+		const user = await this.userDao.updateUserById(String(req.user?.userId), { isVerified: true });
+		if (!user) throw new NotFound("User not found");
+		await this.tokenDao.deleteTokenByEmail(email, "otp");
+		await activateInvitations(user);
+
+		// re-issuing the session so the token payload carries isVerified
+		const { sanitizedUser, accessToken } = await createSession(user, res);
+		return Ok(res, "Email verified", { user: sanitizedUser, accessToken });
+	};
+
+	// send a fresh verification code
+	resendOtp = async (req: AuthenticatedRequest, res: Response) => {
+		const email = String(req.user?.email || "").toLowerCase();
+		await this.tokenDao.deleteTokenByEmail(email, "otp");
+		const otp = generateOTPToken();
+		await this.tokenDao.createToken({ email, type: "otp", value: otp, expiresAt: new Date(Date.now() + OTP_EXPIRY_TIME) });
+		sendMail(email, "Verify your email", `Your OTP is ${otp}. It will expire in ${OTP_EXPIRY_TIME / 60000} minutes.`);
+		return Ok(res, "Verification code sent");
 	};
 
 	// refresh access token
@@ -224,7 +258,9 @@ class AuthController {
 				googleId: googleUser.googleId,
 				isVerified: true,
 			});
+			await createOrganizationForUser(user, `${googleUser.name || "My"}'s workspace`);
 		}
+		await activateInvitations(user!);
 
 		// creating session and tokens
 		const { sanitizedUser, accessToken } = await createSession(
@@ -251,24 +287,6 @@ class AuthController {
 			maxAge: 10 * 60 * 1000,
 		});
 
-		// capturing client origin from referer or query
-		let clientOrigin = env.FRONTEND_URL;
-		if (req.headers.referer) {
-			try {
-				clientOrigin = new URL(req.headers.referer).origin;
-			} catch (err) {
-				// ignore invalid URL referers
-			}
-		}
-
-		// setting the google oauth origin cookie
-		res.cookie("googleOAuthOrigin", clientOrigin, {
-			httpOnly: true,
-			secure: env.NODE_ENV === "production",
-			sameSite: "lax",
-			maxAge: 10 * 60 * 1000,
-		});
-
 		// returning the redirect to google authorization url
 		return res.redirect(getGoogleAuthorizationUrl(state));
 	};
@@ -277,24 +295,17 @@ class AuthController {
 	googleCallback = async (req: Request, res: Response) => {
 		const { code, state, error } = req.query;
 		const cookies = (req.cookies as Record<string, string>);
-		const clientOrigin = cookies?.googleOAuthOrigin || env.FRONTEND_URL;
+		const clientOrigin = env.FRONTEND_URL;
 		const redirectToLogin = `${clientOrigin}/login?googleError=1`;
 
 		// redirecting to login if state is invalid or error
 		const isStateValid = state && state === cookies?.googleOAuthState;
-		if (
-			error ||
-			!code ||
-			!state ||
-			(!isStateValid && env.NODE_ENV === "production")
-		) {
+		if (error || !code || !state || !isStateValid) {
 			res.clearCookie("googleOAuthState");
-			res.clearCookie("googleOAuthOrigin");
 			return res.redirect(redirectToLogin);
 		}
 
 		res.clearCookie("googleOAuthState");
-		res.clearCookie("googleOAuthOrigin");
 
 		// fetching the google user using the authorization code
 		const googleUser = await getGoogleUserFromCode(code as string);
@@ -316,7 +327,9 @@ class AuthController {
 				googleId: googleUser.googleId,
 				isVerified: true,
 			});
+			await createOrganizationForUser(user, `${googleUser.name || "My"}'s workspace`);
 		}
+		await activateInvitations(user!);
 
 		// creating session for the authenticated user
 		await createSession(user!, res);
@@ -328,7 +341,7 @@ class AuthController {
 	// send password reset email
 	forgotPassword = async (req: ForgotPasswordRequest, res: Response) => {
 		// getting the email from the request body
-		const { email } = req.body;
+		const email = req.body.email.toLowerCase();
 
 		// deleting any existing reset token for this email
 		await this.tokenDao.deleteTokenByEmail(email, "reset");
@@ -361,15 +374,17 @@ class AuthController {
 		const { token, password } = req.body;
 
 		// finding the reset token in the database
-		const resetToken = await this.tokenDao.findTokenByValue(token);
+		const resetToken = await this.tokenDao.findValidToken(token, "reset");
 
 		if (!resetToken) {
-			throw new NotFound("Reset token not found.");
+			throw new NotFound("Reset link is invalid or has expired.");
 		}
 
 		// finding the user from the email
 		const tokenEmail = (resetToken as unknown as { email: string }).email;
 		const user = await this.userDao.findUserByEmail(tokenEmail);
+
+		if (!user) throw new NotFound("Reset link is invalid or has expired.");
 
 		// setting the new password
 		const userDoc = user as unknown as { password?: string; save(): Promise<unknown> };
@@ -378,8 +393,9 @@ class AuthController {
 		// saving the user with the new password
 		await userDoc.save();
 
-		// deleting the token after successful reset
+		// deleting the token after successful reset and signing out every existing session
 		await this.tokenDao.deleteTokenByValue(token);
+		await this.sessionDao.deleteSessionByUserId(user._id);
 
 		// returning success response
 		return Ok(res, "Password reset Successfully");

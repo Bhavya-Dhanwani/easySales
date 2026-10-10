@@ -4,6 +4,9 @@ import AuthController from "./auth.controller.js";
 import { signupValidators, loginValidators, forgotPasswordValidators, resetPasswordValidators, googleLoginValidators } from "./auth.validator.js";
 import authMiddleware from "../../../shared/middlewares/auth.middleware.js";
 import refreshMiddleware from "../../../shared/middlewares/refresh.middleware.js";
+import { authRateLimit } from "../../../shared/middlewares/index.middleware.js";
+import { body } from "express-validator";
+import validateErrors from "../../../shared/utils/validateErrors.util.js";
 
 // making the router
 const router = express.Router();
@@ -16,14 +19,14 @@ const authController = new AuthController();
     @desc Signup user
     @access Public
 */
-router.post("/signup", signupValidators, authController.signup);
+router.post("/signup", authRateLimit, signupValidators, authController.signup);
 
 /*
     @route POST /api/auth/login
     @desc Login user
     @access Public
 */
-router.post("/login", loginValidators, authController.login);
+router.post("/login", authRateLimit, loginValidators, authController.login);
 
 /*
     @route GET /api/auth/me
@@ -31,6 +34,20 @@ router.post("/login", loginValidators, authController.login);
     @access Private
 */
 router.get("/me", authMiddleware, authController.me);
+
+/*
+    @route POST /api/auth/verify-email
+    @desc Verify email with the OTP sent at signup
+    @access Private
+*/
+router.post("/verify-email", authRateLimit, authMiddleware, body("otp").isString().isLength({ min: 6, max: 6 }).withMessage("Enter the 6-digit code"), validateErrors, authController.verifyEmail);
+
+/*
+    @route POST /api/auth/resend-otp
+    @desc Send a new verification code
+    @access Private
+*/
+router.post("/resend-otp", authRateLimit, authMiddleware, authController.resendOtp);
 
 /*
     @route POST /api/auth/refresh
@@ -67,14 +84,14 @@ router.get("/google/callback", authController.googleCallback);
     @desc Forgot password
     @access Public
 */
-router.post("/forgot-password", forgotPasswordValidators, authController.forgotPassword);
+router.post("/forgot-password", authRateLimit, forgotPasswordValidators, authController.forgotPassword);
 
 /*
     @route POST /api/auth/reset-password
     @desc Reset password
     @access Public
 */
-router.post("/reset-password", resetPasswordValidators, authController.resetPassword);
+router.post("/reset-password", authRateLimit, resetPasswordValidators, authController.resetPassword);
 
 // exporting the router
 export default router;

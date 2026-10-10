@@ -33,7 +33,7 @@ export interface SignupRequestBody {
     name: string;
     email: string;
     password?: string;
-    token?: string;
+    organizationName?: string;
 }
 
 // Login request body interface

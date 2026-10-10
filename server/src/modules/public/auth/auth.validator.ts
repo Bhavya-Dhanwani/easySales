@@ -22,8 +22,16 @@ const signupValidators = [
     body("password")
         .notEmpty()
         .withMessage("Password is required")
-        .isLength({ min: 6 })
-        .withMessage("Password must be at least 6 characters long"),
+        .isLength({ min: 8, max: 128 })
+        .withMessage("Password must be 8-128 characters long"),
+
+    // validating the optional organization name
+    body("organizationName")
+        .optional()
+        .isString()
+        .trim()
+        .isLength({ min: 2, max: 120 })
+        .withMessage("Organization name must be 2-120 characters"),
 
     // validating errors
     validateErrors
@@ -74,8 +82,8 @@ const resetPasswordValidators = [
     body("password")
         .notEmpty()
         .withMessage("Password is required")
-        .isLength({ min: 6 })
-        .withMessage("Password must be at least 6 characters long"),
+        .isLength({ min: 8, max: 128 })
+        .withMessage("Password must be 8-128 characters long"),
 
     // validating errors
     validateErrors

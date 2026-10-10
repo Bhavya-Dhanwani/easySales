@@ -3,7 +3,7 @@ import transporter from "../config/mail.config.js";
 import logger from "../config/logger.config.js";
 import env from "../config/env.config.js";
 
-// function to send the mails
+// sends transactional (account) mail; failures are logged instead of crashing the process
 function sendMail(to: string, subject: string, html: string) {
     if (env.SEND_MAIL) {
         transporter.sendMail({
@@ -11,7 +11,7 @@ function sendMail(to: string, subject: string, html: string) {
             to,
             subject,
             html
-        });
+        }).catch((error: unknown) => logger.error({ error, to, subject }, "Failed to send mail"));
     } else {
         logger.info(`[Mail Mock Log] To: ${to} | Subject: ${subject} | HTML: ${html}`);
     }

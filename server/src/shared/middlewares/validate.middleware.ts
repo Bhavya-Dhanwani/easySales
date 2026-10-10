@@ -1,15 +1,17 @@
 // Importing modules
 import { Request, Response, NextFunction } from "express";
+import { ZodTypeAny } from "zod";
 import BadRequest from "../errors/BadRequest.error.js";
 
-// function to validate incoming requests
-function validate(schema: { safeParse?: (data: unknown) => { success: boolean } }) {
+// validates and replaces req.body with the parsed (stripped, coerced) value
+function validate(schema: ZodTypeAny) {
     return (req: Request, res: Response, next: NextFunction) => {
-        if (!schema) return next();
-        const result = schema.safeParse ? schema.safeParse(req.body) : { success: true };
+        const result = schema.safeParse(req.body ?? {});
         if (!result.success) {
-            throw new BadRequest("Validation failed");
+            const issue = result.error.issues[0];
+            throw new BadRequest(`${issue.path.join(".") || "body"}: ${issue.message}`);
         }
+        req.body = result.data;
         next();
     };
 }
