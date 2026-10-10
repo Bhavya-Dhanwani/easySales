@@ -46,6 +46,25 @@ const envSchema = z.object({
     // origin that serves prototype previews; use a separate domain in production (defaults to FRONTEND_URL)
     PREVIEW_BASE_URL: z.union([z.literal(""), z.string().url()]).default(""),
 
+    // metering: unit prices in minor units of BILLING_CURRENCY (operator configuration, never model output)
+    BILLING_CURRENCY: z.string().length(3).default("INR"),
+    LLM_COST_INPUT_PER_MTOK_MINOR: z.coerce.number().int().min(0).default(25_000),
+    LLM_COST_OUTPUT_PER_MTOK_MINOR: z.coerce.number().int().min(0).default(125_000),
+    EMAIL_COST_MINOR: z.coerce.number().int().min(0).default(0),
+    // platform-wide emergency brake on total daily spend across all tenants (0 = off)
+    GLOBAL_DAILY_SPEND_CAP_MINOR: z.coerce.number().int().min(0).default(0),
+
+    // comma-separated emails of platform operators (admin metrics, feature flags, dead letters)
+    ADMIN_EMAILS: z.string().default(""),
+
+    // per-IP request limit on /api (health checks are exempt)
+    API_RATE_LIMIT_PER_MIN: z.coerce.number().int().min(1).default(300),
+    // per-workspace request limit on /api/v1, so one tenant cannot starve the others
+    TENANT_RATE_LIMIT_PER_MIN: z.coerce.number().int().min(1).default(600),
+
+    // above this many due jobs the worker defers non-critical scheduling (follow-ups, campaign enrolment)
+    QUEUE_BACKPRESSURE: z.coerce.number().int().min(1).default(500),
+
     // run the background worker inside the API process (disable when running `npm run worker` separately)
     RUN_WORKER: booleanFromEnv(true),
 });

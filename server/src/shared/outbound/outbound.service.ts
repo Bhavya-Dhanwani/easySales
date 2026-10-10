@@ -1,4 +1,5 @@
 // Importing modules
+import { isEnabled } from "../flags/flags.service.js";
 import mongoose from "mongoose";
 import Message from "../models/message.model.js";
 import Approval from "../models/approval.model.js";
@@ -114,6 +115,7 @@ export async function proposeOutbound(req: OutboundRequest): Promise<OutboundRes
     // escalations never bypass a denial, they only turn an allow into a human review
     const escalations = [
         req.forceApprovalReason,
+        req.actor.type === "agent" && !(await isEnabled(organizationId, "auto_send")) ? "Autonomous sending is not enabled for this workspace yet" : undefined,
         req.claims?.some((c) => !c.verified) ? "A personalisation claim is not backed by research evidence" : undefined,
         req.campaignId && req.actor.type === "agent" && !(await Campaign.exists({ organizationId, _id: req.campaignId, autoSend: true })) ? "Campaign requires approval for each message" : undefined,
     ].filter((r): r is string => Boolean(r));

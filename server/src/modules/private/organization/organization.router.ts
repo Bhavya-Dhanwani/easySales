@@ -18,8 +18,52 @@ import Forbidden from "../../../shared/errors/Forbidden.error.js";
 import Conflict from "../../../shared/errors/Conflict.error.js";
 import NotFound from "../../../shared/errors/NotFound.error.js";
 import { oid } from "../../../shared/utils/request.util.js";
+import { getCurrentPolicy, publishPolicy } from "../../../shared/policy/policy.service.js";
+import { spendSnapshot } from "../../../shared/billing/budget.service.js";
+import { tenantFunnel } from "../../../shared/ops/ops.service.js";
 
 const router = express.Router();
+
+/*
+    @route GET /api/v1/organization/usage
+    @desc This month's funnel, metered usage by resource, cost per qualified opportunity and per won deal
+*/
+router.get("/usage", authorize("usage.read"), async (req: Request, res: Response) => {
+    const ctx = ctxOf(req);
+    const [funnel, spend] = await Promise.all([tenantFunnel(ctx.organizationId), spendSnapshot(ctx.organizationId)]);
+    return Ok(res, "Usage", { ...funnel, spend });
+});
+
+const BudgetSchema = z.object({
+    monthlySpendMinor: z.number().int().min(0).max(1e11),
+    maxLlmCallsPerDay: z.number().int().min(0).max(100000),
+    maxResearchPerDay: z.number().int().min(0).max(100000),
+    maxConcurrentResearch: z.number().int().min(1).max(50),
+    maxConcurrentBuilds: z.number().int().min(1).max(10),
+    artifactStorageBytes: z.number().int().min(0).max(1e10),
+}).partial().strict();
+
+/*
+    @route GET /api/v1/organization/budgets
+    @desc Configured limits next to what is committed and held this month
+*/
+router.get("/budgets", authorize("usage.read"), async (req: Request, res: Response) => {
+    const ctx = ctxOf(req);
+    const { config, version } = await getCurrentPolicy(ctx.organizationId);
+    return Ok(res, "Budgets", { policyVersion: version, limits: { ...config.budgets, prototypeMonthlyBudgetMinor: config.prototypes.monthlyBudgetMinor }, spend: await spendSnapshot(ctx.organizationId) });
+});
+
+/*
+    @route POST /api/v1/organization/budgets
+    @desc Change limits: publishes a new (audited, immutable) policy version
+*/
+router.post("/budgets", authorize("policies.write"), validate(BudgetSchema), async (req: Request, res: Response) => {
+    const ctx = ctxOf(req);
+    const { config, version } = await getCurrentPolicy(ctx.organizationId);
+    const policy = await publishPolicy(ctx.organizationId, { ...config, budgets: { ...config.budgets, ...req.body } }, ctx.userId);
+    await audit({ organizationId: ctx.organizationId, actorType: "user", actorId: ctx.userId, action: "policy.publish", targetType: "policy", targetId: policy._id.toString(), outcome: "success", policyVersion: policy.version, metadata: { previousVersion: version, budgets: req.body } });
+    return Ok(res, "Budgets updated", { limits: (policy.config as typeof config).budgets, policyVersion: policy.version });
+});
 
 const UpdateOrgSchema = z.object({
     name: z.string().trim().min(2).max(120).optional(),

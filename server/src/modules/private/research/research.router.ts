@@ -21,7 +21,7 @@ const RESEARCH_TYPES = ["lead.research", "lead.pipeline"];
 // token usage per workflow, for the research activity view
 async function usageFor(organizationId: mongoose.Types.ObjectId, workflowIds: mongoose.Types.ObjectId[]) {
     const rows = await UsageRecord.aggregate([
-        { $match: { organizationId, workflowId: { $in: workflowIds } } },
+        { $match: { organizationId, kind: "llm", workflowId: { $in: workflowIds } } },
         { $group: { _id: "$workflowId", calls: { $sum: 1 }, inputTokens: { $sum: "$inputTokens" }, outputTokens: { $sum: "$outputTokens" } } },
     ]);
     return new Map(rows.map((r) => [String(r._id), { calls: r.calls, inputTokens: r.inputTokens, outputTokens: r.outputTokens }]));

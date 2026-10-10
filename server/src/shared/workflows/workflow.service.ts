@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import Workflow, { WORKFLOW_TYPES } from "../models/workflow.model.js";
 import { getCurrentPolicy } from "../policy/policy.service.js";
 import { audit } from "../audit/audit.service.js";
+import { currentRequestId } from "../ops/requestContext.js";
 
 type Id = mongoose.Types.ObjectId;
 
@@ -31,7 +32,7 @@ export async function startWorkflow(req: StartWorkflow) {
         const workflow = await Workflow.create({
             organizationId: req.organizationId, type: req.type, entityType: req.entityType, entityId: req.entityId,
             input: req.input ?? {}, idempotencyKey: req.idempotencyKey, policyVersion: version,
-            startedBy: req.startedBy, correlationId: randomUUID(),
+            startedBy: req.startedBy, correlationId: currentRequestId() ?? randomUUID(),
         });
         await audit({
             organizationId: req.organizationId, actorType: req.actor.type, actorId: req.actor.id, action: "workflow.start",

@@ -316,6 +316,8 @@ router.patch("/:id", authorize("leads.write"), validate(UpdateLeadSchema), async
     const lead = await Lead.findOne({ organizationId: ctx.organizationId, _id: oid(req.params.id) });
     if (!lead) throw new NotFound("Lead not found");
     const body = req.body as z.infer<typeof UpdateLeadSchema>;
+    // "won" is reached only through the handoff of an accepted proposal, never by a status edit
+    if (body.opportunityStage === "won" && lead.opportunityStage !== "won") throw new Conflict("Record the accepted proposal and hand the deal over to mark it won");
     if (body.opportunityStage) lead.opportunityStage = body.opportunityStage;
     if (body.contact) {
         for (const [k, v] of Object.entries(body.contact)) lead.set(`contact.${k}`, v || undefined);

@@ -8,13 +8,16 @@ import Message from "../shared/models/message.model.js";
 import Conversation from "../shared/models/conversation.model.js";
 import Lead from "../shared/models/lead.model.js";
 import Proposal from "../shared/models/proposal.model.js";
-import Prototype from "../shared/models/prototype.model.js";
-import { getCurrentPolicy, isSuppressed } from "../shared/policy/policy.service.js";
+import { getCurrentPolicy, isSuppressed, startOfUtcDay } from "../shared/policy/policy.service.js";
+import UsageRecord from "../shared/models/usageRecord.model.js";
+import { commit, recordUsage, releaseExpiredReservations } from "../shared/billing/budget.service.js";
+import { runOpsChecks } from "../shared/ops/ops.service.js";
+import env from "../shared/config/env.config.js";
 import { isQuietHours } from "../shared/policy/policy.engine.js";
 import { audit } from "../shared/audit/audit.service.js";
 import { startWorkflow } from "../shared/workflows/workflow.service.js";
 import { expireProposals, generateProposalBody } from "../shared/proposals/proposal.service.js";
-import { buildPrototype, expireStalePreviews } from "../shared/prototypes/prototype.service.js";
+import { buildPrototype, expireStalePreviews, failPrototype } from "../shared/prototypes/prototype.service.js";
 import { runRequirementsExtraction } from "../shared/requirements/requirements.service.js";
 import { proposeOutbound } from "../shared/outbound/outbound.service.js";
 import { getEmailProvider, type EmailProvider } from "../providers/email.provider.js";
@@ -103,7 +106,34 @@ async function runFollowUp(wf: WorkflowDoc) {
     return { outcome: `follow_up_${result.status}`, messageId: result.messageId.toString() };
 }
 
+const RESEARCH = ["lead.research", "lead.pipeline"];
+
+/*
+    Per-tenant concurrency and daily limits, checked after leasing (the leased job counts
+    itself). Over the limit the job goes back to the queue untouched instead of failing.
+*/
+async function deferIfOverLimit(wf: WorkflowDoc) {
+    const group = RESEARCH.includes(wf.type) ? RESEARCH : wf.type === "prototype.build" ? ["prototype.build"] : null;
+    if (!group) return false;
+    const { config } = await getCurrentPolicy(wf.organizationId);
+    const running = await Workflow.countDocuments({ organizationId: wf.organizationId, type: { $in: group }, status: "running" });
+    const limit = group === RESEARCH ? config.budgets.maxConcurrentResearch : config.budgets.maxConcurrentBuilds;
+    let until: Date | null = running > limit ? new Date(Date.now() + 15_000) : null;
+    if (!until && group === RESEARCH && wf.attempts === 1) {
+        const today = await UsageRecord.countDocuments({ organizationId: wf.organizationId, kind: "llm", agent: "research", createdAt: { $gte: startOfUtcDay() } });
+        if (today >= config.budgets.maxResearchPerDay) {
+            until = new Date(startOfUtcDay().getTime() + 86400_000);
+            await alert(wf.organizationId, "budget_exhausted", `Daily research limit (${config.budgets.maxResearchPerDay}) reached; queued research resumes tomorrow.`);
+        }
+    }
+    if (!until) return false;
+    await Workflow.updateOne({ organizationId: wf.organizationId, _id: wf._id, status: "running" }, { status: "queued", lockedUntil: null, nextRunAt: until, $inc: { attempts: -1 } });
+    return true;
+}
+
 async function executeWorkflow(wf: WorkflowDoc) {
+    if (await deferIfOverLimit(wf)) return;
+    logger.info({ organizationId: String(wf.organizationId), workflowId: String(wf._id), correlationId: wf.correlationId, type: wf.type, attempt: wf.attempts }, "workflow.start");
     const scope = { organizationId: wf.organizationId, _id: wf._id };
     try {
         if (wf.type === "lead.pipeline" || wf.type === "conversation.reply") {
@@ -140,12 +170,11 @@ async function executeWorkflow(wf: WorkflowDoc) {
             failureCode: err.code ?? "ERROR",
             lastError: err.message?.slice(0, 1000),
             // exponential backoff: 30s, 60s, 120s...
-            nextRunAt: new Date(Date.now() + 30_000 * 2 ** (wf.attempts - 1)),
+            // exponential backoff with jitter so retries of many jobs do not arrive together
+            nextRunAt: new Date(Date.now() + 30_000 * 2 ** (wf.attempts - 1) * (0.5 + Math.random())),
         });
         if (giveUp) {
-            if (wf.type === "prototype.build") {
-                await Prototype.updateOne({ organizationId: wf.organizationId, _id: wf.entityId, status: { $in: ["queued", "building", "testing"] } }, { status: "failed", failureCode: err.code ?? "ERROR" });
-            }
+            if (wf.type === "prototype.build") await failPrototype(wf.organizationId, wf.entityId, err.code ?? "ERROR");
             // research that can no longer succeed is visible on the lead, never silently stuck
             if (wf.type === "lead.research" || wf.type === "lead.pipeline") {
                 await Lead.updateOne(
@@ -173,6 +202,10 @@ async function leaseMessage() {
         { sort: { notBefore: 1 }, new: true },
     ).setOptions({ crossTenant: true });
 }
+
+// consecutive not-accepted sends per tenant, to detect a provider outage
+// ponytail: in-process; a shared store when several workers send for the same tenant
+const sendFailures = new Map<string, number>();
 
 // connection-phase failures: the provider never accepted the message, so a retry is safe
 const RETRYABLE = new Set(["ECONNECTION", "ECONNREFUSED", "EDNS", "ENOTFOUND", "EAI_AGAIN"]);
@@ -219,6 +252,9 @@ async function dispatchMessage(msg: InstanceType<typeof Message>) {
         const now = new Date();
         await Message.updateOne(scope, { status: "sent", sentAt: now, providerMessageId, lockedUntil: null, error: null });
         await recordOutboundSent(organizationId, msg, now);
+        sendFailures.delete(String(organizationId));
+        await recordUsage(organizationId, { kind: "email", costMinor: env.EMAIL_COST_MINOR, provider: provider.name, refId: msg._id.toString() });
+        await commit(organizationId, "email", env.EMAIL_COST_MINOR);
         await Lead.updateOne({ organizationId, _id: msg.leadId, outreachStatus: { $in: ["not_started", "eligible"] } }, { outreachStatus: "active" });
         if (msg.proposalId) await Proposal.updateOne({ organizationId, _id: msg.proposalId, status: "approved" }, { status: "sent", sentAt: new Date() });
         await audit({
@@ -238,6 +274,9 @@ async function dispatchMessage(msg: InstanceType<typeof Message>) {
             status, error: err.message?.slice(0, 500), lockedUntil: null,
             notBefore: new Date(Date.now() + 60_000 * msg.attempts),
         });
+        if (notAccepted && (sendFailures.set(String(organizationId), (sendFailures.get(String(organizationId)) ?? 0) + 1).get(String(organizationId)) ?? 0) >= 3) {
+            await alert(organizationId, "provider_outage", `Email provider refused or could not be reached for several sends in a row: ${err.message}`);
+        }
         if (status === "uncertain") await alert(organizationId, "uncertain_send", "A message may or may not have been delivered; check the provider before resending.", { messageId: msg._id.toString() });
         await audit({
             organizationId, actorType: "system", actorId: `email:${provider.name}`, action: "message.send_failed",
@@ -313,22 +352,40 @@ export async function runOnce({ maxWorkflows = 5, maxMessages = 20, force = fals
         if (!msg) break;
         await dispatchMessage(msg);
     }
-    await processPendingEvents();
-    await expireStalePreviews();
-    await expireProposals();
+    await task("provider_events", processPendingEvents);
+    await task("expire_previews", () => expireStalePreviews());
+    await task("expire_proposals", () => expireProposals());
+    await task("release_reservations", () => releaseExpiredReservations());
     if (force || Date.now() - lastFollowUpScan > 60_000) {
         lastFollowUpScan = Date.now();
-        await scheduleFollowUps();
-        await enrollCampaigns();
+        // backpressure: with a deep queue, new follow-ups and enrolments wait; replies and sends do not
+        const due = await Workflow.countDocuments({ status: "queued", nextRunAt: { $lte: new Date() } }).setOptions({ crossTenant: true });
+        if (due > env.QUEUE_BACKPRESSURE) logger.warn({ due }, "Queue over backpressure limit; deferring follow-ups and campaign enrolment");
+        else {
+            await task("follow_ups", scheduleFollowUps);
+            await task("campaign_enrolment", enrollCampaigns);
+        }
+        await task("ops_checks", () => runOpsChecks());
     }
     if (Date.now() - lastRetentionRun > 24 * 3600_000) {
         lastRetentionRun = Date.now();
-        await enforceRetention();
+        await task("retention", () => enforceRetention());
+    }
+}
+
+// a scheduled task that throws is alerted and does not stop the rest of the tick
+async function task(name: string, fn: () => Promise<unknown>) {
+    try {
+        await fn();
+    } catch (error) {
+        logger.error({ task: name, error: (error as Error).message }, "Scheduled task failed");
+        await alert(null, "scheduled_task_failed", `${name}: ${(error as Error).message}`);
     }
 }
 
 let timer: NodeJS.Timeout | null = null;
 let busy = false;
+let lastTickAt = 0;
 
 // ponytail: Mongo-leased polling queue (no Redis to operate); move hot paths to BullMQ if throughput demands it
 export function startWorker(intervalMs = 2000) {
@@ -337,6 +394,7 @@ export function startWorker(intervalMs = 2000) {
     timer = setInterval(async () => {
         if (busy || mongoose.connection.readyState !== 1) return;
         busy = true;
+        lastTickAt = Date.now();
         try {
             await runOnce();
         } catch (error) {
@@ -347,7 +405,13 @@ export function startWorker(intervalMs = 2000) {
     }, intervalMs);
 }
 
-export function stopWorker() {
+// stops taking new work and resolves once the in-flight tick has finished (leases cover a hard kill)
+export async function stopWorker(maxWaitMs = 25_000) {
     if (timer) clearInterval(timer);
     timer = null;
+    const until = Date.now() + maxWaitMs;
+    while (busy && Date.now() < until) await new Promise((r) => setTimeout(r, 100));
 }
+
+// liveness of the in-process worker for /health/ready
+export const workerHeartbeat = () => ({ running: Boolean(timer), lastTickAt });

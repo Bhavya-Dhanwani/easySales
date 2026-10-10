@@ -20,9 +20,10 @@ async function startServer() {
 	// graceful shutdown: stop taking work, finish in-flight requests, close the database
 	const shutdown = (signal: string) => {
 		logger.info(`${signal} received, shutting down`);
-		stopWorker();
-		server.close(() => mongoose.disconnect().finally(() => process.exit(0)));
-		setTimeout(() => process.exit(1), 10_000).unref();
+		setTimeout(() => process.exit(1), 30_000).unref();
+		// stop accepting requests, let the in-flight worker tick finish, then close the database
+		server.close();
+		stopWorker().then(() => mongoose.disconnect()).finally(() => process.exit(0));
 	};
 	process.on("SIGTERM", () => shutdown("SIGTERM"));
 	process.on("SIGINT", () => shutdown("SIGINT"));

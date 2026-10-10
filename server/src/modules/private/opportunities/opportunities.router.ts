@@ -7,6 +7,7 @@ import Prototype from "../../../shared/models/prototype.model.js";
 import Proposal from "../../../shared/models/proposal.model.js";
 import Message from "../../../shared/models/message.model.js";
 import AuditEvent from "../../../shared/models/auditEvent.model.js";
+import { audit } from "../../../shared/audit/audit.service.js";
 import { authorize, ctxOf } from "../../../shared/tenancy/orgContext.middleware.js";
 import validate from "../../../shared/middlewares/validate.middleware.js";
 import { startWorkflow } from "../../../shared/workflows/workflow.service.js";
@@ -83,6 +84,42 @@ router.get("/opportunities/:id/timeline", authorize("proposals.read"), async (re
     const events = await AuditEvent.find({ organizationId: org, targetId: { $in: ids } }).sort({ createdAt: -1 }).limit(200).lean();
     return Ok(res, "Timeline", { events });
 });
+
+/*
+    @route POST /api/v1/opportunities/:id/handoff
+    @desc Hand a won deal to delivery: needs an accepted proposal; returns the handoff package (idempotent)
+*/
+router.post("/opportunities/:id/handoff", authorize("proposals.write"),
+    validate(z.object({ notes: z.string().trim().max(2000).optional() }).strict()),
+    async (req: Request, res: Response) => {
+        const { ctx, lead } = await opportunity(req);
+        const org = ctx.organizationId;
+        const accepted = await Proposal.findOne({ organizationId: org, leadId: lead._id, status: "accepted" }).sort({ version: -1 }).lean();
+        if (!accepted) throw new Conflict("No accepted proposal: record the client's acceptance first");
+        if (!lead.handoff?.at) {
+            await Lead.updateOne(
+                { organizationId: org, _id: lead._id, "handoff.at": { $exists: false } },
+                { opportunityStage: "won", handoff: { proposalId: accepted._id, at: new Date(), by: ctx.userId, notes: req.body.notes } },
+            );
+            await audit({ organizationId: org, actorType: "user", actorId: ctx.userId, action: "deal.handoff", targetType: "lead", targetId: String(lead._id), outcome: "success", metadata: { proposalId: String(accepted._id), totalMinor: accepted.totalMinor } });
+        }
+        const [fresh, requirements, demo] = await Promise.all([
+            Lead.findOne({ organizationId: org, _id: lead._id }).lean(),
+            latestRequirements(org, lead._id),
+            accepted.prototypeId ? Prototype.findOne({ organizationId: org, _id: accepted.prototypeId }).lean() : null,
+        ]);
+        // everything delivery needs, in one document the business can drop into its own process
+        return Ok(res, "Deal handed over", {
+            handoff: fresh?.handoff,
+            package: {
+                client: { company: fresh?.company, contact: fresh?.contact },
+                proposal: { version: accepted.version, items: accepted.items, totalMinor: accepted.totalMinor, currency: accepted.currency, paymentSchedule: accepted.paymentSchedule, scope: accepted.scope, milestones: accepted.milestones, acceptance: accepted.acceptance, body: accepted.body },
+                requirements: requirements ? { version: requirements.version, ...requirements.requirements as object } : null,
+                demo: demo ? { templateId: demo.templateId, previewUrl: demo.status === "ready" ? demo.previewUrl : null } : null,
+                note: "Acceptance is recorded, not a signed contract or a payment: both stay with your usual process.",
+            },
+        });
+    });
 
 /* -------------------------- requirements ------------------------- */
 

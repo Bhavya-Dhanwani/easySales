@@ -1,31 +1,24 @@
 // Importing modules
 import mongoose from "mongoose";
 import Organization from "../models/organization.model.js";
-import Membership from "../models/membership.model.js";
-import BusinessProfile from "../models/businessProfile.model.js";
-import Policy from "../models/policy.model.js";
-import Lead from "../models/lead.model.js";
-import Workflow from "../models/workflow.model.js";
-import AgentTask from "../models/agentTask.model.js";
-import Approval from "../models/approval.model.js";
-import AuditEvent from "../models/auditEvent.model.js";
-import Conversation from "../models/conversation.model.js";
-import Message from "../models/message.model.js";
-import Suppression from "../models/suppression.model.js";
-import Proposal from "../models/proposal.model.js";
-import UsageRecord from "../models/usageRecord.model.js";
 
-// every tenant-owned collection, in one place, so export and deletion cannot drift apart
-const TENANT_MODELS = {
-    memberships: Membership, businessProfile: BusinessProfile, policies: Policy, leads: Lead,
-    workflows: Workflow, agentTasks: AgentTask, approvals: Approval, conversations: Conversation,
-    messages: Message, suppressions: Suppression, proposals: Proposal, usage: UsageRecord, auditEvents: AuditEvent,
-} as const;
+// append-only collections: only export/purge touch them, through the raw collection
+const RAW_DELETE = new Set(["AuditEvent", "UsageRecord"]);
+// never exported, even encrypted
+const SECRET_FIELDS = "-smtp.passwordEnc -webhookSecretEnc -previewToken -artifactHtml";
+
+/*
+    Every model with an organizationId is tenant data. Derived from the registered models
+    so a new collection can never be forgotten by export or deletion.
+*/
+function tenantModels() {
+    return Object.values(mongoose.models).filter((m) => m.modelName !== "Organization" && m.schema.path("organizationId"));
+}
 
 export async function exportTenant(organizationId: mongoose.Types.ObjectId) {
     const out: Record<string, unknown> = { organization: await Organization.findById(organizationId).lean(), exportedAt: new Date() };
-    for (const [key, model] of Object.entries(TENANT_MODELS)) {
-        out[key] = await (model as mongoose.Model<unknown>).find({ organizationId }).lean();
+    for (const model of tenantModels()) {
+        out[model.collection.collectionName] = await model.find({ organizationId }).select(SECRET_FIELDS).setOptions({ strictQuery: false }).lean();
     }
     return out;
 }
@@ -36,9 +29,9 @@ export async function exportTenant(organizationId: mongoose.Types.ObjectId) {
 */
 export async function purgeTenant(organizationId: mongoose.Types.ObjectId) {
     await Organization.updateOne({ _id: organizationId }, { status: "deleting" });
-    for (const [key, model] of Object.entries(TENANT_MODELS)) {
-        if (key === "auditEvents") await AuditEvent.collection.deleteMany({ organizationId });
-        else await (model as mongoose.Model<unknown>).deleteMany({ organizationId });
+    for (const model of tenantModels()) {
+        if (RAW_DELETE.has(model.modelName)) await model.collection.deleteMany({ organizationId });
+        else await model.deleteMany({ organizationId }).setOptions({ crossTenant: true });
     }
     // LangGraph checkpoints are keyed by workflow id; they expire via TTL
     await Organization.deleteOne({ _id: organizationId });

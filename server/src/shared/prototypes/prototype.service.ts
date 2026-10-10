@@ -18,6 +18,8 @@ import { generatePrototypeContent, PrototypeContent } from "../../agents/prototy
 import type { Requirements as Reqs } from "../../agents/requirements.agent.js";
 import { loadProfile } from "../../agents/graphs/common.js";
 import env from "../config/env.config.js";
+import { recordUsage, release, reserve, settle, spendSnapshot, SpendLimitError } from "../billing/budget.service.js";
+import { isEnabled } from "../flags/flags.service.js";
 import NotFound from "../errors/NotFound.error.js";
 import Conflict from "../errors/Conflict.error.js";
 
@@ -29,15 +31,31 @@ const PERMANENT = new Set(["LLM_NOT_CONFIGURED", "BUDGET_EXCEEDED"]);
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
-const startOfMonth = (now = new Date()) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-
-// what this tenant has spent on prototype builds this calendar month (UTC)
+// spent plus held on prototype builds this calendar month (UTC), from the atomic spend counters
 export async function monthSpentMinor(organizationId: Id) {
+    const { prototype } = await spendSnapshot(organizationId);
+    return prototype.committedMinor + prototype.reservedMinor;
+}
+
+// the build round is over: charge what the attempts actually cost and free the rest of the hold
+async function settleBuild(organizationId: Id, prototypeId: Id) {
+    const p = await Prototype.findOne({ organizationId, _id: prototypeId }).lean();
+    if (p?.reservationId) await settle(organizationId, p.reservationId, p.costMinorUnits);
+}
+
+// called by the worker when a build workflow gives up
+export async function failPrototype(organizationId: Id, prototypeId: Id, code: string) {
+    await Prototype.updateOne({ organizationId, _id: prototypeId, status: { $in: ["queued", "building", "testing"] } }, { status: "failed", failureCode: code });
+    await settleBuild(organizationId, prototypeId);
+}
+
+// bytes of built pages currently held for this tenant (reviewable or live)
+async function storedBytes(organizationId: Id) {
     const [row] = await Prototype.aggregate([
-        { $match: { organizationId: new mongoose.Types.ObjectId(String(organizationId)), createdAt: { $gte: startOfMonth() } } },
-        { $group: { _id: null, total: { $sum: "$costMinorUnits" } } },
+        { $match: { organizationId: new mongoose.Types.ObjectId(String(organizationId)), status: { $in: ["needs_review", "ready"] } } },
+        { $group: { _id: null, bytes: { $sum: "$artifactBytes" } } },
     ]);
-    return (row?.total as number | undefined) ?? 0;
+    return (row?.bytes as number | undefined) ?? 0;
 }
 
 const approvalPayload = (p: ProtoDoc) => ({
@@ -71,7 +89,7 @@ export async function requestPrototype(organizationId: Id, opportunityId: Id, op
     const b = config.prototypes;
     const estimateMinor = b.costPerAttemptMinor * b.maxAttempts;
 
-    const result = evaluate({
+    let result = evaluate({
         type: "prototype.build",
         leadQualified: lead.status === "qualified" || (lead.qualification?.score ?? 0) >= config.qualification.minimumScore,
         hasRequirements: Boolean(r),
@@ -81,6 +99,19 @@ export async function requestPrototype(organizationId: Id, opportunityId: Id, op
         monthSpentMinor: await monthSpentMinor(organizationId),
         prospectBudgetMinor: r?.constraints.budgetMinorUnits ?? null,
     }, config);
+    if (!await isEnabled(organizationId, "prototypes")) result = { decision: "deny", reasons: ["Prototype builds are not enabled for this workspace yet"] };
+
+    // the money is held before anything is queued; two parallel requests cannot both fit in the last slice of budget
+    const prototypeId = new mongoose.Types.ObjectId();
+    let reservationId: mongoose.Types.ObjectId | undefined;
+    if (result.decision !== "deny") {
+        try {
+            reservationId = (await reserve(organizationId, "prototype", estimateMinor, prototypeId.toString(), 8 * 86400_000))._id;
+        } catch (error) {
+            if (!(error instanceof SpendLimitError)) throw error;
+            result = { decision: "deny", reasons: [error.message] };
+        }
+    }
 
     const auditBase = { organizationId, actorType: "user" as const, actorId: opts.userId, action: "prototype.request", targetType: "lead", targetId: String(opportunityId), policyVersion: version };
     if (result.decision === "deny") {
@@ -89,7 +120,7 @@ export async function requestPrototype(organizationId: Id, opportunityId: Id, op
     }
 
     const prototype = await Prototype.create({
-        organizationId, opportunityId, requirementsVersion: req!.version, templateId, currency: config.pricing.currency,
+        _id: prototypeId, reservationId, organizationId, opportunityId, requirementsVersion: req!.version, templateId, currency: config.pricing.currency,
         budgetMinorUnits: estimateMinor, maxAttempts: b.maxAttempts, idempotencyKey: opts.idempotencyKey, requestedBy: opts.userId,
     });
     if (result.decision === "needs_approval") {
@@ -116,6 +147,7 @@ export async function decidePrototypeApproval(organizationId: Id, prototypeId: I
         p.status = "cancelled";
         p.failureCode = "REJECTED";
         await p.save();
+        if (p.reservationId) await release(organizationId, p.reservationId);
         return;
     }
     if (hashPayload(approvalPayload(p)) !== payloadHash) throw new Conflict("Prototype request changed since review");
@@ -189,14 +221,15 @@ export async function buildPrototype(organizationId: Id, prototypeId: Id, workfl
         );
         if (!charged) return { outcome: "cancelled" };
         p = charged;
+        await recordUsage(organizationId, { kind: "prototype", costMinor: perAttempt, provider: p.templateId, refId: String(prototypeId), workflowId });
 
         let content: PrototypeContent;
         try {
-            content = await generatePrototypeContent({ organizationId, workflowId, correlationId }, requirements, template.brief, profile, findings);
+            content = await generatePrototypeContent({ organizationId, workflowId, correlationId, costCoveredBy: `prototype:${prototypeId}` }, requirements, template.brief, profile, findings);
         } catch (error) {
             const code = (error as { code?: string }).code ?? "";
             if (PERMANENT.has(code)) {
-                await Prototype.updateOne(scope, { status: "failed", failureCode: code });
+                await failPrototype(organizationId, prototypeId, code);
                 throw error;
             }
             findings = sanitize(error);
@@ -208,11 +241,16 @@ export async function buildPrototype(organizationId: Id, prototypeId: Id, workfl
         const html = template.render(content);
         qa = runQa(html, content, requirements, profile.prohibitedClaims);
         if (qa.buildPassed && qa.testsPassed && qa.securityPassed) {
+            if (await storedBytes(organizationId) + Buffer.byteLength(html) > config.budgets.artifactStorageBytes) {
+                await failPrototype(organizationId, prototypeId, "STORAGE_QUOTA");
+                return { outcome: "failed", code: "STORAGE_QUOTA" };
+            }
             const done = await Prototype.updateOne(
                 { ...scope, status: "testing" },
                 { status: "needs_review", artifactHtml: html, artifactChecksum: sha256(html), artifactBytes: Buffer.byteLength(html), qaReport: qa, completedAt: new Date() },
             );
             if (!done.modifiedCount) return { outcome: "cancelled" };
+            await settleBuild(organizationId, prototypeId);
             await audit({ organizationId, actorType: "agent", actorId: "prototype_builder", action: "prototype.built", targetType: "prototype", targetId: String(prototypeId), outcome: "success", correlationId, metadata: { attempts: p.attempts, costMinor: p.costMinorUnits } });
             return { outcome: "built" };
         }
@@ -221,6 +259,7 @@ export async function buildPrototype(organizationId: Id, prototypeId: Id, workfl
 
     const code = p.attempts >= p.maxAttempts ? "REPAIR_BUDGET_EXHAUSTED" : "BUDGET_EXHAUSTED";
     await Prototype.updateOne({ ...scope, status: { $in: ["queued", "building", "testing"] } }, { status: "failed", failureCode: code, qaReport: qa ?? undefined, completedAt: new Date() });
+    await settleBuild(organizationId, prototypeId);
     await audit({ organizationId, actorType: "agent", actorId: "prototype_builder", action: "prototype.failed", targetType: "prototype", targetId: String(prototypeId), outcome: "failure", correlationId, metadata: { code, findings: qa?.findings ?? [] } });
     return { outcome: "failed", code };
 }
@@ -275,6 +314,7 @@ export async function cancelPrototype(organizationId: Id, prototypeId: Id, userI
     );
     if (!p) throw new Conflict("Prototype can no longer be cancelled");
     await Workflow.updateMany({ organizationId, entityId: p._id, status: "queued" }, { status: "cancelled" });
+    await settleBuild(organizationId, p._id);
     await Approval.updateMany({ organizationId, targetId: p._id, status: "pending" }, { status: "expired" });
     await audited(organizationId, userId, "prototype.cancel", prototypeId);
     return p;
@@ -286,15 +326,20 @@ export async function retryPrototype(organizationId: Id, prototypeId: Id, userId
     if (p.status !== "failed" || p.failureCode === "REJECTED") throw new Conflict("Only a failed build can be retried");
     const { config } = await getCurrentPolicy(organizationId);
     const estimate = config.prototypes.costPerAttemptMinor * config.prototypes.maxAttempts;
-    if (await monthSpentMinor(organizationId) + estimate > config.prototypes.monthlyBudgetMinor) throw new Conflict("Monthly prototype budget exhausted");
     if (p.costMinorUnits + estimate > config.prototypes.maxPerPrototypeMinor) throw new Conflict("Retry would exceed the per-prototype limit; request a new build");
+    const hold = await reserve(organizationId, "prototype", estimate, p._id.toString(), 8 * 86400_000).catch((e) => {
+        throw e instanceof SpendLimitError ? new Conflict(e.message) : e;
+    });
 
     const updated = await Prototype.findOneAndUpdate(
         { organizationId, _id: prototypeId, status: "failed" },
-        { status: "queued", attempts: 0, maxAttempts: config.prototypes.maxAttempts, budgetMinorUnits: p.costMinorUnits + estimate, $inc: { retries: 1 }, $unset: { failureCode: 1 } },
+        { status: "queued", attempts: 0, maxAttempts: config.prototypes.maxAttempts, budgetMinorUnits: p.costMinorUnits + estimate, reservationId: hold._id, $inc: { retries: 1 }, $unset: { failureCode: 1 } },
         { new: true },
     );
-    if (!updated) throw new Conflict("Prototype changed; reload");
+    if (!updated) {
+        await release(organizationId, hold._id);
+        throw new Conflict("Prototype changed; reload");
+    }
     await startBuild(updated);
     await audited(organizationId, userId, "prototype.retry", prototypeId, { retries: updated.retries });
     return updated;
@@ -310,5 +355,6 @@ export async function findPreview(token: string) {
     if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
     const p = await Prototype.findOne({ previewToken: token, status: "ready" }).select("+artifactHtml +previewToken").setOptions({ crossTenant: true });
     if (!p || !p.previewExpiresAt || p.previewExpiresAt < new Date() || !p.artifactHtml) return null;
+    await Prototype.updateOne({ organizationId: p.organizationId, _id: p._id }, { $inc: { previewViews: 1 } });
     return p.artifactHtml;
 }

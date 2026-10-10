@@ -36,7 +36,7 @@ router.get("/dashboard", authorize("leads.read"), async (req: Request, res: Resp
         Message.countDocuments({ organizationId, direction: "inbound", createdAt: { $gte: since7d } }),
         Workflow.countDocuments({ organizationId, status: { $in: ["queued", "running"] } }),
         Workflow.countDocuments({ organizationId, status: "failed", updatedAt: { $gte: since7d } }),
-        UsageRecord.countDocuments({ organizationId, createdAt: { $gte: startOfUtcDay() } }),
+        UsageRecord.countDocuments({ organizationId, kind: "llm", createdAt: { $gte: startOfUtcDay() } }),
         AuditEvent.find({ organizationId }).sort({ createdAt: -1 }).limit(12).lean(),
     ]);
     const { config } = await getCurrentPolicy(organizationId);
@@ -68,8 +68,8 @@ router.get("/dashboard", authorize("leads.read"), async (req: Request, res: Resp
 router.get("/usage/summary", authorize("usage.read"), async (req: Request, res: Response) => {
     const ctx = ctxOf(req);
     const since = new Date(Date.now() - 30 * 24 * 3600_000);
-    const match = { $match: { organizationId: ctx.organizationId, createdAt: { $gte: since } } };
-    const sum = { calls: { $sum: 1 }, inputTokens: { $sum: "$inputTokens" }, outputTokens: { $sum: "$outputTokens" } };
+    const match = { $match: { organizationId: ctx.organizationId, kind: "llm", createdAt: { $gte: since } } };
+    const sum = { calls: { $sum: 1 }, inputTokens: { $sum: "$inputTokens" }, outputTokens: { $sum: "$outputTokens" }, costMinor: { $sum: "$costMinor" } };
     const [byAgent, byModel, byDay] = await Promise.all([
         UsageRecord.aggregate([match, { $group: { _id: "$agent", ...sum } }, { $sort: { calls: -1 } }]),
         UsageRecord.aggregate([match, { $group: { _id: "$model", ...sum } }, { $sort: { calls: -1 } }]),

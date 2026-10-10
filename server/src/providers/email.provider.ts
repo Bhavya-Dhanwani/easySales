@@ -1,4 +1,5 @@
 // Importing modules
+import { isEnabled } from "../shared/flags/flags.service.js";
 import nodemailer, { type Transporter } from "nodemailer";
 import mongoose from "mongoose";
 import transporter from "../shared/config/mail.config.js";
@@ -56,10 +57,10 @@ class SmtpProvider implements EmailProvider {
 
 // development delivery: logs instead of sending, behaves like a successful provider
 class LogProvider implements EmailProvider {
-    readonly name = "log";
+    constructor(readonly name = "log", private domain = "easysales.local") {}
     async send(email: OutboundEmail) {
-        logger.info({ to: email.to, subject: email.subject }, "[email:log] outbound message (no account connected, SEND_MAIL=false)");
-        return { providerMessageId: messageIdFor(email.messageKey, "easysales.local") };
+        logger.info({ subject: email.subject, provider: this.name }, "[email] captured outbound message (not delivered)");
+        return { providerMessageId: messageIdFor(email.messageKey, this.domain) };
     }
 }
 
@@ -71,6 +72,8 @@ const cache = new Map<string, { at: number; provider: EmailProvider }>();
     the global SMTP/log fallback. Production refuses to send without a connected account.
 */
 export async function getEmailProvider(organizationId: mongoose.Types.ObjectId | string): Promise<EmailProvider> {
+    // pilot / internal testing: the whole pipeline runs, nothing reaches a real inbox
+    if (!await isEnabled(organizationId, "live_email")) return new LogProvider("test", "easysales.test");
     if (override) return override;
     const integration = await EmailIntegration.findOne({ organizationId, status: { $ne: "disconnected" } }).lean();
     if (integration) {
@@ -91,7 +94,7 @@ export async function getEmailProvider(organizationId: mongoose.Types.ObjectId |
 }
 
 export function createTransport(smtp: { host: string; port: number; secure?: boolean | null; user: string }, password: string) {
-    return nodemailer.createTransport({ host: smtp.host, port: smtp.port, secure: Boolean(smtp.secure), auth: { user: smtp.user, pass: password }, connectionTimeout: 10_000 });
+    return nodemailer.createTransport({ host: smtp.host, port: smtp.port, secure: Boolean(smtp.secure), auth: { user: smtp.user, pass: password }, connectionTimeout: 10_000, greetingTimeout: 10_000, socketTimeout: 30_000 });
 }
 
 // tests and future adapters (SES, Postmark, Gmail API) plug in here

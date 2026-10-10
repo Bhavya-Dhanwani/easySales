@@ -109,6 +109,14 @@ const leadSchema = new mongoose.Schema({
 
     ownerId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
 
+    // set once when a won deal is handed over to delivery
+    handoff: {
+        proposalId: { type: mongoose.Schema.Types.ObjectId, ref: "Proposal" },
+        at: Date,
+        by: String,
+        notes: String,
+    },
+
     // set once when a campaign enrolls the lead (a lead is in at most one campaign)
     campaignId: { type: mongoose.Schema.Types.ObjectId, ref: "Campaign" },
 

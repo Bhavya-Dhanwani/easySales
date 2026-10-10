@@ -14,6 +14,9 @@ import campaignsRouter from "../../modules/private/campaigns/campaigns.router.js
 import outreachRouter from "../../modules/private/outreach/outreach.router.js";
 import opportunitiesRouter from "../../modules/private/opportunities/opportunities.router.js";
 import previewRouter from "../../modules/public/preview/preview.router.js";
+import adminRouter from "../../modules/admin/admin.router.js";
+import { rateLimit } from "express-rate-limit";
+import env from "../config/env.config.js";
 import authMiddleware from "../middlewares/auth.middleware.js";
 import orgContext from "../tenancy/orgContext.middleware.js";
 import Forbidden from "../errors/Forbidden.error.js";
@@ -26,6 +29,7 @@ router.use("/health", healthRouter);
 router.use("/auth", authRouter);
 router.use("/webhooks", webhooksRouter);
 router.use("/preview", previewRouter);
+router.use("/admin", adminRouter);
 
 // only verified accounts can act on tenant data (the agent sends email on their behalf)
 function requireVerified(req: Request & { user?: { isVerified?: boolean } }, res: Response, next: NextFunction) {
@@ -36,6 +40,11 @@ function requireVerified(req: Request & { user?: { isVerified?: boolean } }, res
 // versioned, authenticated, tenant-scoped API
 const v1 = express.Router();
 v1.use(authMiddleware, requireVerified, orgContext);
+// per-tenant limit on top of the per-IP one: one busy workspace cannot starve the others
+v1.use(rateLimit({
+    windowMs: 60_000, limit: env.NODE_ENV === "test" ? 100_000 : env.TENANT_RATE_LIMIT_PER_MIN, standardHeaders: "draft-8", legacyHeaders: false,
+    keyGenerator: (req) => `org:${String((req as Request & { ctx?: { organizationId?: unknown } }).ctx?.organizationId)}`,
+}));
 v1.use("/organization", organizationRouter);
 v1.use("/leads", leadsRouter);
 v1.use("/", settingsRouter);

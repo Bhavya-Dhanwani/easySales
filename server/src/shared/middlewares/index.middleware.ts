@@ -5,7 +5,7 @@ import cors from "cors";
 import helmet from "helmet";
 import hpp from "hpp";
 import cookieParser from "cookie-parser";
-import morgan from "morgan";
+import { requestContext } from "../ops/requestContext.js";
 import { rateLimit } from "express-rate-limit";
 import env from "../config/env.config.js";
 
@@ -14,6 +14,9 @@ function applyMiddlewares(app: Express) {
 
     // trusting the first proxy so rate limits see the real client IP behind a reverse proxy
     app.set("trust proxy", 1);
+
+    // request id, structured access log and latency metrics (first, so everything below is covered)
+    app.use(requestContext);
 
     // applying middlewares
     app.use(compression());
@@ -28,10 +31,8 @@ function applyMiddlewares(app: Express) {
 
     app.use(cookieParser());
 
-    if (env.NODE_ENV !== "test") app.use(morgan(env.NODE_ENV === "production" ? "combined" : "dev"));
-
     // global API rate limit per IP
-    app.use("/api", rateLimit({ windowMs: 60_000, limit: 300, standardHeaders: "draft-8", legacyHeaders: false }));
+    app.use("/api", rateLimit({ windowMs: 60_000, limit: env.API_RATE_LIMIT_PER_MIN, standardHeaders: "draft-8", legacyHeaders: false, skip: (req) => req.path.startsWith("/health") }));
 
     // keeping the raw bytes so webhook signatures can be verified
     app.use(express.json({ limit: "2mb", verify: (req, res, buf) => { (req as { rawBody?: Buffer }).rawBody = buf; } }));

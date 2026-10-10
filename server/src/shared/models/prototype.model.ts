@@ -21,6 +21,12 @@ const prototypeSchema = new mongoose.Schema({
     // set when a human has to approve the build before it starts
     approvalId: { type: mongoose.Schema.Types.ObjectId, ref: "Approval" },
 
+    // budget held for this build round (see billing/budget.service.ts)
+    reservationId: { type: mongoose.Schema.Types.ObjectId, ref: "BudgetReservation" },
+
+    // how often the public preview was opened (pilot funnel metric)
+    previewViews: { type: Number, default: 0 },
+
     budgetMinorUnits: { type: Number, required: true, min: 0 },
 
     costMinorUnits: { type: Number, default: 0 },

@@ -42,6 +42,12 @@ export const PolicyConfigSchema = z.object({
     }),
     budgets: z.object({
         maxLlmCallsPerDay: z.number().int().min(0).max(100000),
+        // total monthly spend (AI, research, email, prototypes) in the platform billing currency
+        monthlySpendMinor: z.number().int().min(0).max(1e11).default(10_000_00),
+        maxResearchPerDay: z.number().int().min(0).max(100000).default(200),
+        maxConcurrentResearch: z.number().int().min(1).max(50).default(3),
+        maxConcurrentBuilds: z.number().int().min(1).max(10).default(1),
+        artifactStorageBytes: z.number().int().min(0).max(1e10).default(20_000_000),
     }),
     // demo builds: every attempt is charged against these budgets (same currency as pricing)
     prototypes: z.object({
@@ -79,7 +85,7 @@ export const DEFAULT_POLICY: PolicyConfig = {
     qualification: { minimumScore: 70, minimumEvidenceCoverage: 60, reviewScore: 50 },
     pricing: { currency: "INR", minimumDealValueMinor: 25000_00, maximumDiscountPercent: 10, maximumDealValueMinor: 10_00_000_00, taxBasisPoints: 0, proposalValidityDays: 30 },
     proposals: { autoSend: false },
-    budgets: { maxLlmCallsPerDay: 500 },
+    budgets: { maxLlmCallsPerDay: 500, monthlySpendMinor: 10_000_00, maxResearchPerDay: 200, maxConcurrentResearch: 3, maxConcurrentBuilds: 1, artifactStorageBytes: 20_000_000 },
     prototypes: { enabled: true, autoBuild: true, costPerAttemptMinor: 50_00, maxAttempts: 2, maxPerPrototypeMinor: 200_00, monthlyBudgetMinor: 5000_00, previewDays: 7 },
     retention: { messageDays: 365, auditDays: 730 },
 };

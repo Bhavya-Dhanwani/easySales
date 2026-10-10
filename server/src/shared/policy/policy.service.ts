@@ -44,7 +44,7 @@ export function startOfUtcDay(now = new Date()) {
 }
 
 export async function llmCallsToday(organizationId: OrgId) {
-    return UsageRecord.countDocuments({ organizationId, createdAt: { $gte: startOfUtcDay() } });
+    return UsageRecord.countDocuments({ organizationId, kind: "llm", createdAt: { $gte: startOfUtcDay() } });
 }
 
 // true if any prohibited phrase appears (case-insensitive) in the text

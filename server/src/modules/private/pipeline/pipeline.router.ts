@@ -59,6 +59,21 @@ router.get("/workflows/:id", authorize("leads.read"), async (req: Request, res: 
 });
 
 /*
+    @route POST /api/v1/workflows/:id/retry
+    @desc Requeue a failed job once the cause is fixed (prototypes and research have their own retry)
+*/
+router.post("/workflows/:id/retry", authorize("workflows.run"), async (req: Request, res: Response) => {
+    const ctx = ctxOf(req);
+    const workflow = await Workflow.findOneAndUpdate(
+        { organizationId: ctx.organizationId, _id: oid(req.params.id), status: "failed", type: { $nin: ["prototype.build"] } },
+        { status: "queued", attempts: 0, nextRunAt: new Date(), $unset: { failureCode: 1, lastError: 1 } }, { new: true },
+    ).lean();
+    if (!workflow) throw new Conflict("Only failed workflows can be retried");
+    await audit({ organizationId: ctx.organizationId, actorType: "user", actorId: ctx.userId, action: "workflow.retry", targetType: "workflow", targetId: workflow._id.toString(), outcome: "success" });
+    return Ok(res, "Workflow requeued", { workflow });
+});
+
+/*
     @route POST /api/v1/workflows/:id/cancel
 */
 router.post("/workflows/:id/cancel", authorize("workflows.run"), async (req: Request, res: Response) => {
@@ -212,7 +227,7 @@ router.post("/proposals/:id/send", authorize("proposals.write"), async (req: Req
     @route PATCH /api/v1/proposals/:id
     @desc Record the client's answer (accepted is not "won": contract and payment follow)
 */
-router.patch("/proposals/:id", authorize("proposals.write"), validate(z.object({ status: z.enum(["accepted", "rejected"]) }).strict()), async (req: Request, res: Response) => {
+router.patch("/proposals/:id", authorize("proposals.write"), validate(z.object({ status: z.literal("rejected") }).strict()), async (req: Request, res: Response) => {
     const ctx = ctxOf(req);
     const proposal = await Proposal.findOneAndUpdate(
         { organizationId: ctx.organizationId, _id: oid(req.params.id), status: "sent" },

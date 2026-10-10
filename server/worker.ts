@@ -9,8 +9,8 @@ async function main() {
 	startWorker();
 	const shutdown = () => {
 		logger.info("Worker shutting down");
-		stopWorker();
-		mongoose.disconnect().finally(() => process.exit(0));
+		setTimeout(() => process.exit(1), 30_000).unref();
+		stopWorker().then(() => mongoose.disconnect()).finally(() => process.exit(0));
 	};
 	process.on("SIGTERM", shutdown);
 	process.on("SIGINT", shutdown);

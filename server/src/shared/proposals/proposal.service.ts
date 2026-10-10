@@ -1,4 +1,5 @@
 // Importing modules
+import { isEnabled } from "../flags/flags.service.js";
 import mongoose from "mongoose";
 import Proposal from "../models/proposal.model.js";
 import Lead from "../models/lead.model.js";
@@ -254,6 +255,10 @@ export async function submitForApproval(organizationId: Id, proposalId: string |
     if (await isSuppressed(organizationId, lead.contact.email)) throw new Conflict("Recipient has opted out");
 
     const payload = proposalPayload(proposal, lead.contact.email);
+    if (v.decision === "allow" && !await isEnabled(organizationId, "auto_send")) {
+        v.decision = "needs_approval";
+        v.reasons = ["Autonomous sending is not enabled for this workspace yet"];
+    }
     if (v.decision === "allow") {
         Object.assign(proposal, { status: "approved", approvedBy: "policy", approvedAt: new Date(), payloadHash: hashPayload(payload) });
     } else {
