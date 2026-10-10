@@ -40,6 +40,8 @@ const messageSchema = new mongoose.Schema({
 
     approvalId: { type: mongoose.Schema.Types.ObjectId, ref: "Approval" },
 
+    proposalId: { type: mongoose.Schema.Types.ObjectId, ref: "Proposal" },
+
     attempts: { type: Number, default: 0 },
 
     lockedUntil: Date,

@@ -16,19 +16,21 @@ const evidenceSchema = new mongoose.Schema({
     observedAt: { type: Date, default: Date.now },
 }, { _id: false });
 
+const companySchema = new mongoose.Schema({
+    name: { type: String, required: true, trim: true, maxlength: 200 },
+    website: { type: String, trim: true },
+    domain: { type: String, lowercase: true, trim: true },
+    industry: String,
+    size: String,
+    country: String,
+}, { _id: false });
+
 // a prospective customer (company + primary contact) moving through the pipeline
 const leadSchema = new mongoose.Schema({
 
     ...tenantFields,
 
-    company: {
-        name: { type: String, required: true, trim: true, maxlength: 200 },
-        website: { type: String, trim: true },
-        domain: { type: String, lowercase: true, trim: true },
-        industry: String,
-        size: String,
-        country: String,
-    },
+    company: { type: companySchema, required: true },
 
     contact: {
         name: String,

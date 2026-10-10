@@ -2,7 +2,7 @@
 import mongoose from "mongoose";
 import tenantPlugin, { tenantFields } from "../tenancy/tenant.plugin.js";
 
-export const WORKFLOW_TYPES = ["lead.pipeline", "conversation.reply", "proposal.generate"] as const;
+export const WORKFLOW_TYPES = ["lead.pipeline", "conversation.reply", "conversation.followup", "proposal.generate"] as const;
 export const WORKFLOW_STATUSES = ["queued", "running", "waiting_approval", "completed", "failed", "cancelled"] as const;
 
 /*
