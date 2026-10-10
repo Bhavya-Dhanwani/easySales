@@ -72,9 +72,9 @@ docker compose up --build
 
 This runs the API (which also serves the SPA), a separate agent worker, and MongoDB. In production the API refuses to start with the development JWT secrets or `CORS_ORIGIN=*`.
 
-### Inbound email
+### Email
 
-Point your mail provider's inbound webhook at `POST /api/webhooks/email/inbound` with JSON `{ eventId, organizationId, conversationId, from, subject, text }`. Sign it with the header `X-EasySales-Signature: sha256=<hex HMAC-SHA256 of the raw body using WEBHOOK_SECRET>`. Redelivered events are ignored, and the sender must match the lead on the thread.
+Each workspace connects its own sending account (SMTP) under **Settings → Email**. Credentials are verified, then stored AES-256-GCM encrypted. Delivery, bounce, complaint and reply events arrive at that account's signed webhook (see [docs/API.md](docs/API.md)).
 
 ## Docs
 

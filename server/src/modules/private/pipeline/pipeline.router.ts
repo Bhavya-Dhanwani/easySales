@@ -1,6 +1,7 @@
 // Importing modules
 import express, { Request, Response } from "express";
 import { z } from "zod";
+import mongoose from "mongoose";
 import Workflow, { WORKFLOW_STATUSES } from "../../../shared/models/workflow.model.js";
 import AgentTask from "../../../shared/models/agentTask.model.js";
 import Approval from "../../../shared/models/approval.model.js";
@@ -127,7 +128,11 @@ router.post("/approvals/:id/reject", authorize("approvals.decide"), validate(z.o
 */
 router.get("/conversations", authorize("conversations.read"), async (req: Request, res: Response) => {
     const ctx = ctxOf(req);
-    const conversations = await Conversation.find({ organizationId: ctx.organizationId }).sort({ lastMessageAt: -1, updatedAt: -1 }).limit(100).lean();
+    const filter: Record<string, unknown> = { organizationId: ctx.organizationId };
+    const status = str(req.query.status);
+    if (status && ["open", "waiting", "needs_review", "closed", "suppressed"].includes(status)) filter.status = status;
+    if (req.query.assigned === "me") filter.assignedTo = new mongoose.Types.ObjectId(ctx.userId);
+    const conversations = await Conversation.find(filter).sort({ lastMessageAt: -1, updatedAt: -1 }).limit(100).lean();
     return Ok(res, "Conversations", { conversations: await withLeads(ctx.organizationId, conversations) });
 });
 

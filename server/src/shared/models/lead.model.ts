@@ -67,6 +67,7 @@ const leadSchema = new mongoose.Schema({
         provider: { type: String, enum: ["csv", "manual", "provider", "seed"], default: "manual" },
         externalId: String,
         importId: { type: mongoose.Schema.Types.ObjectId, ref: "ImportJob" },
+        enrolledAt: Date,
         importedAt: { type: Date, default: Date.now },
     },
 
@@ -107,6 +108,9 @@ const leadSchema = new mongoose.Schema({
     },
 
     ownerId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+
+    // set once when a campaign enrolls the lead (a lead is in at most one campaign)
+    campaignId: { type: mongoose.Schema.Types.ObjectId, ref: "Campaign" },
 
 }, { timestamps: true });
 

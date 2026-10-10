@@ -21,6 +21,7 @@ const BusinessProfileSchema = z.object({
     businessType: text(120),
     description: text(4000),
     website: z.union([z.literal(""), z.string().trim().url().max(500)]),
+    meetingLink: z.union([z.literal(""), z.string().trim().url().max(500)]).optional(),
     services: z.array(z.object({
         name: text(120).min(1),
         description: text(1000).default(""),

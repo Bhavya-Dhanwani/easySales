@@ -10,8 +10,8 @@ Copy `server/.env.example` and set at least:
 | `ACCESS_TOKEN_SECRET`, `REFRESH_TOKEN_SECRET` | ≥ 32 random chars; the API refuses to start with the dev defaults |
 | `CORS_ORIGIN`, `FRONTEND_URL` | your public origin (never `*`) |
 | `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL_SMART`, `LLM_MODEL_FAST` | AI gateway |
-| `SEND_MAIL`, `SMTP_*`, `SENDING_USER` | real mail delivery |
-| `WEBHOOK_SECRET` | inbound email signature |
+| `SEND_MAIL`, `SMTP_*`, `SENDING_USER` | account emails (verification, password reset). Outreach is sent through each tenant's connected account; production refuses to send outreach without one |
+| `ENCRYPTION_KEY` | ≥ 32 random chars; encrypts stored email credentials (the API refuses to start in production without it) |
 | `ALERT_WEBHOOK_URL` | optional; Slack or Discord incoming webhook |
 | `RUN_WORKER` | `false` on API instances when you run a separate worker |
 

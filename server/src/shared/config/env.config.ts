@@ -37,8 +37,8 @@ const envSchema = z.object({
     LLM_MODEL_SMART: z.string().default(envConstants.LLM_MODEL_SMART),
     LLM_MODEL_FAST: z.string().default(envConstants.LLM_MODEL_FAST),
 
-    // shared secret used to verify inbound provider webhooks
-    WEBHOOK_SECRET: z.string().default(""),
+    // key for encrypting stored credentials (email account passwords, webhook secrets)
+    ENCRYPTION_KEY: z.string().min(32).default("dev_only_encryption_key_change_in_production_000"),
 
     // optional Slack/Discord-compatible webhook for operational alerts
     ALERT_WEBHOOK_URL: z.union([z.literal(""), z.string().url()]).default(""),
@@ -62,9 +62,10 @@ const env = parsedEnv.data;
 if (env.NODE_ENV === "production" && (
     env.ACCESS_TOKEN_SECRET === envConstants.ACCESS_TOKEN_SECRET ||
     env.REFRESH_TOKEN_SECRET === envConstants.REFRESH_TOKEN_SECRET ||
+    env.ENCRYPTION_KEY.startsWith("dev_only_") ||
     env.CORS_ORIGIN === "*"
 )) {
-    console.error("Refusing to start: set ACCESS_TOKEN_SECRET, REFRESH_TOKEN_SECRET and CORS_ORIGIN for production.");
+    console.error("Refusing to start: set ACCESS_TOKEN_SECRET, REFRESH_TOKEN_SECRET, ENCRYPTION_KEY and CORS_ORIGIN for production.");
     process.exit(1);
 }
 

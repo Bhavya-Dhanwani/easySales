@@ -4,6 +4,7 @@ import { Annotation, END, START, StateGraph, interrupt } from "@langchain/langgr
 import Lead from "../../shared/models/lead.model.js";
 import Message from "../../shared/models/message.model.js";
 import Workflow from "../../shared/models/workflow.model.js";
+import Campaign from "../../shared/models/campaign.model.js";
 import { runResearch } from "../../shared/research/research.service.js";
 import { proposeOutbound } from "../../shared/outbound/outbound.service.js";
 import { draftOutreach } from "../outreach.agent.js";
@@ -14,6 +15,7 @@ export const LeadPipelineState = Annotation.Root({
     leadId: Annotation<string>,
     workflowId: Annotation<string>,
     correlationId: Annotation<string>,
+    campaignId: Annotation<string | undefined>,
     outcome: Annotation<string>,
     messageId: Annotation<string | undefined>,
     approvalId: Annotation<string | undefined>,
@@ -55,12 +57,13 @@ async function draft(s: S) {
     }
 
     const profile = await loadProfile(s.organizationId);
-    const email = await draftOutreach(ctxOf(s), lead, lead.research ?? {}, profile);
+    const campaign = s.campaignId ? await Campaign.findOne({ organizationId: s.organizationId, _id: s.campaignId }).lean() : null;
+    if (campaign && campaign.status !== "active") return { sendStatus: "rejected", outcome: "campaign_not_active" };
+    const email = await draftOutreach(ctxOf(s), lead, lead.research ?? {}, profile, { objective: campaign?.objective || undefined });
     const conversation = await ensureConversation(s.organizationId, lead._id);
-    if (!conversation.subject) {
-        conversation.subject = email.subject;
-        await conversation.save();
-    }
+    if (!conversation.subject) conversation.subject = email.subject;
+    if (campaign && !conversation.campaignId) conversation.campaignId = campaign._id;
+    await conversation.save();
 
     await markStep(s.organizationId, s.workflowId, "policy_check");
     const result = await proposeOutbound({
@@ -68,6 +71,7 @@ async function draft(s: S) {
         kind: "outreach", subject: email.subject, body: email.body, idempotencyKey,
         workflowId: new mongoose.Types.ObjectId(s.workflowId),
         correlationId: s.correlationId, actor: { type: "agent", id: "outreach" },
+        campaignId: campaign?._id, claims: email.claims,
     });
 
     return {

@@ -4,7 +4,7 @@ import env from "../config/env.config.js";
 import logger from "../config/logger.config.js";
 import AuditEvent from "../models/auditEvent.model.js";
 
-export type AlertKind = "workflow_failed" | "budget_exhausted" | "send_cap_reached" | "uncertain_send";
+export type AlertKind = "workflow_failed" | "budget_exhausted" | "send_cap_reached" | "uncertain_send" | "complaint";
 
 const lastSent = new Map<string, number>();
 const THROTTLE_MS = 60 * 60_000;

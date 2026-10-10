@@ -33,6 +33,9 @@ const businessProfileSchema = new mongoose.Schema({
         disqualifiers: [String],
     },
 
+    // shared with prospects who ask for a meeting (Calendly, Cal.com, Google booking page...)
+    meetingLink: { type: String, default: "" },
+
     brandVoice: { type: String, default: "professional, concise, warm", maxlength: 500 },
 
     approvedClaims: [String],

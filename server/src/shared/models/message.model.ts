@@ -2,7 +2,8 @@
 import mongoose from "mongoose";
 import tenantPlugin, { tenantFields } from "../tenancy/tenant.plugin.js";
 
-export const MESSAGE_STATUSES = ["pending_approval", "queued", "sending", "sent", "failed", "uncertain", "rejected", "received"] as const;
+// "sent" = accepted by the provider; delivered / bounced come later from provider events
+export const MESSAGE_STATUSES = ["draft", "pending_approval", "queued", "sending", "sent", "delivered", "bounced", "failed", "uncertain", "rejected", "received"] as const;
 
 /*
     Messages double as the transactional outbox: an outbound message is committed as
@@ -42,6 +43,24 @@ const messageSchema = new mongoose.Schema({
 
     proposalId: { type: mongoose.Schema.Types.ObjectId, ref: "Proposal" },
 
+    campaignId: { type: mongoose.Schema.Types.ObjectId, ref: "Campaign" },
+
+    // email threading: our outbound Message-ID is the providerMessageId
+    inReplyTo: String,
+    references: [String],
+
+    // AI review of an inbound message (or of an outbound draft)
+    classification: {
+        confidence: Number,
+        requiresHuman: Boolean,
+        recommendedAction: String,
+    },
+
+    // personalisation claims in a draft and whether each is backed by research evidence
+    claims: [{ _id: false, claim: String, evidenceUrl: String, verified: Boolean }],
+
+    deliveredAt: Date,
+
     attempts: { type: Number, default: 0 },
 
     lockedUntil: Date,
@@ -59,6 +78,8 @@ messageSchema.plugin(tenantPlugin);
 messageSchema.index({ organizationId: 1, idempotencyKey: 1 }, { unique: true });
 messageSchema.index({ organizationId: 1, conversationId: 1, createdAt: 1 });
 messageSchema.index({ status: 1, notBefore: 1 });
+messageSchema.index({ organizationId: 1, providerMessageId: 1 }, { unique: true, partialFilterExpression: { providerMessageId: { $type: "string" } } });
+messageSchema.index({ organizationId: 1, campaignId: 1, status: 1 });
 
 const Message = mongoose.model("Message", messageSchema);
 

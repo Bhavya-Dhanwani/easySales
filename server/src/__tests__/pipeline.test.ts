@@ -7,6 +7,7 @@ import { runOnce } from "../jobs/worker.js";
 import { DEFAULT_POLICY } from "../shared/policy/policy.schema.js";
 import Workflow from "../shared/models/workflow.model.js";
 import Message from "../shared/models/message.model.js";
+import { setSmtpVerifier } from "../modules/private/integrations/integrations.router.js";
 
 before(startDb);
 after(stopDb);
@@ -20,15 +21,20 @@ const FIXTURES = {
         potentialNeeds: [{ need: "Online appointment booking", evidenceUrls: ["lead-record"], confidence: 0.6 }],
         disqualifiers: [], conflicts: [],
     },
-    outreach: { subject: "Online booking for Acme Dental", body: "Hi Priya, I noticed bookings at Acme Dental are phone-only. We build booking flows for clinics. Would a short call next week be useful?" },
-    follow_up: { subject: "Following up", body: "Hi Priya, just floating this back up in case online booking is on your list this quarter." },
+    outreach: { subject: "Online booking for Acme Dental", body: "Hi Priya, I noticed bookings at Acme Dental are phone-only. We build booking flows for clinics. Would a short call next week be useful?", personalizationClaims: [{ claim: "Bookings are phone-only", evidenceUrl: "lead-record" }], proposedCallToAction: "Short call", confidence: 0.9, needsReview: false },
+    follow_up: { subject: "Following up", body: "Hi Priya, just floating this back up in case online booking is on your list this quarter.", personalizationClaims: [], proposedCallToAction: "Reply", confidence: 0.9, needsReview: false },
     conversation: (user: string) => user.includes("price") ? {
-        intent: "question", summary: "Asked about price.", requirements: { needs: ["booking"], budget: "", timeline: "" },
-        shouldReply: true, reply: "Happy to put together a tailored proposal after a short chat.", needsHuman: true,
+        intent: "pricing_question", confidence: 0.9, summary: "Asked about price.", extractedFacts: [{ field: "need", value: "booking", evidence: "price" }],
+        recommendedAction: "reply", returnDate: "", reply: "Booking websites start from our catalogue price; a tailored proposal follows a short chat.",
     } : {
-        intent: "interested", summary: "Interested in online booking for 3 clinics, wants to launch before January.",
-        requirements: { needs: ["online booking", "patient reminders"], budget: "around 1 lakh", timeline: "before January" },
-        shouldReply: true, reply: "Great to hear, Priya. Would Tuesday or Wednesday work for a 20-minute discovery call?", needsHuman: false,
+        intent: "interested", confidence: 0.92, summary: "Interested in online booking for 3 clinics, wants to launch before January.",
+        extractedFacts: [
+            { field: "need", value: "online booking", evidence: "Yes, interested" },
+            { field: "need", value: "patient reminders", evidence: "reminders" },
+            { field: "timeline", value: "before January", evidence: "before January" },
+            { field: "budget", value: "around 1 lakh", evidence: "1 lakh" },
+        ],
+        recommendedAction: "reply", returnDate: "", reply: "Great to hear, Priya. Would Tuesday or Wednesday work for a 20-minute discovery call?",
     },
     proposal: { title: "Online booking for Acme Dental", understanding: "Three clinics need online booking and reminders.", approach: ["Booking flow", "SMS reminders"], nextSteps: ["Discovery call", "Kick-off"] },
 };
@@ -171,24 +177,37 @@ test("pricing questions are escalated to a human even in auto-send mode", async 
     assert.equal(pending?.status, "pending_approval");
 });
 
-test("signed webhook: rejects bad signatures, dedupes redelivery", async () => {
+test("signed per-account webhook: rejects bad signatures, dedupes redelivery, threads by Message-ID", async () => {
     fakeLlm(FIXTURES);
     fakeMailbox();
+    setSmtpVerifier(async () => undefined);
     const { owner, leadId } = await setup();
+    const conn = await request(app).post("/api/v1/integrations/email/connect").set(owner.auth).send({ fromName: "Pixel Forge", fromEmail: "hello@pixelforge.test", host: "smtp.pixelforge.test", port: 587, user: "hello@pixelforge.test", password: "secret-pw" });
+    assert.equal(conn.status, 200);
+    const { integration, webhookSecret } = conn.body.data;
+    assert.ok(!JSON.stringify(conn.body).includes("secret-pw"), "credentials are never returned");
+
+    const policy = { ...DEFAULT_POLICY, outreach: { ...DEFAULT_POLICY.outreach, autoSend: true, quietHours: { ...DEFAULT_POLICY.outreach.quietHours, enabled: false } } };
+    await request(app).put("/api/v1/policies").set(owner.auth).send(policy);
     await request(app).post(`/api/v1/leads/${leadId}/run`).set(owner.auth);
     await runOnce();
-    const lead = (await request(app).get(`/api/v1/leads/${leadId}`).set(owner.auth)).body.data;
+    const sent = await Message.findOne({ organizationId: owner.organizationId, kind: "outreach" }).lean();
+    assert.equal(sent?.status, "sent");
 
-    const payload = JSON.stringify({ eventId: "evt-1", organizationId: owner.organizationId, conversationId: lead.conversation._id, from: "priya@acmedental.in", text: "Interested!" });
-    const sig = createHmac("sha256", "test_webhook_secret").update(payload).digest("hex");
-    const post = (signature: string) => request(app).post("/api/webhooks/email/inbound").set("Content-Type", "application/json").set("X-EasySales-Signature", signature).send(payload);
+    const payload = JSON.stringify({ events: [{ type: "inbound", id: "evt-1", messageId: "<reply-1@acme>", from: "someone-else@acmedental.in", subject: "Re: Online booking", text: "Interested!", inReplyTo: sent?.providerMessageId }] });
+    const sig = createHmac("sha256", webhookSecret).update(payload).digest("hex");
+    const post = (signature: string, body = payload) => request(app).post(`/api/webhooks/email/${integration._id}`).set("Content-Type", "application/json").set("X-EasySales-Signature", signature).send(body);
 
     assert.equal((await post("0".repeat(64))).status, 401);
     const first = await post(sig);
     assert.equal(first.status, 202);
+    assert.equal(first.body.data.accepted, 1);
     const second = await post(sig);
-    assert.equal(second.body.message, "Duplicate event ignored");
-    assert.equal(String(second.body.data.workflowId), String(first.body.data.workflowId));
+    assert.equal(second.body.data.duplicates, 1);
+    await runOnce();
+    const inbound = await Message.find({ organizationId: owner.organizationId, direction: "inbound" }).lean();
+    assert.equal(inbound.length, 1, "redelivery creates no duplicate message");
+    assert.equal(String(inbound[0].conversationId), String(sent?.conversationId), "matched via In-Reply-To even from another address");
 });
 
 test("AI budget exhaustion fails the workflow without retries", async () => {

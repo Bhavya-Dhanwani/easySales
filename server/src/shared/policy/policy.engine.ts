@@ -20,6 +20,7 @@ export type PolicyAction =
         hasConsentBasis: boolean;
         recipientSuppressed: boolean;
         newContactsToday: number;
+        sentLastHour: number;
         containsProhibitedClaim: boolean;
     }
     | {
@@ -81,6 +82,7 @@ export function evaluate(action: PolicyAction, policy: PolicyConfig, now: Date =
             } else if (action.newContactsToday >= o.maxNewContactsPerDay) {
                 deny.push(`Daily new-contact limit (${o.maxNewContactsPerDay}) reached`);
             }
+            if (action.sentLastHour >= o.maxPerHour) deny.push(`Hourly sending limit (${o.maxPerHour}) reached`);
             if (action.containsProhibitedClaim) approve.push("Message contains a prohibited claim");
             if (!o.autoSend) approve.push("Automatic sending is disabled; a human must approve");
             break;

@@ -24,6 +24,16 @@ export async function publishPolicy(organizationId: OrgId, config: PolicyConfig,
 
 export const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
+// adds an address to the do-not-contact list (idempotent); suppression is never lifted automatically
+export async function suppressEmail(organizationId: OrgId, email: string, reason: "opt_out" | "complaint" | "bounce" | "manual", source: string) {
+    const value = normalizeEmail(email);
+    await Suppression.updateOne(
+        { organizationId, channel: "email", value },
+        { $setOnInsert: { organizationId, channel: "email", value, reason, source } },
+        { upsert: true },
+    );
+}
+
 export async function isSuppressed(organizationId: OrgId, email: string | undefined | null) {
     if (!email) return false;
     return Boolean(await Suppression.exists({ organizationId, channel: "email", value: normalizeEmail(email) }));

@@ -14,7 +14,11 @@ import { audit } from "../shared/audit/audit.service.js";
 import { startWorkflow } from "../shared/workflows/workflow.service.js";
 import { generateProposalBody } from "../shared/proposals/proposal.service.js";
 import { proposeOutbound } from "../shared/outbound/outbound.service.js";
-import { getEmailProvider } from "../providers/email.provider.js";
+import { getEmailProvider, type EmailProvider } from "../providers/email.provider.js";
+import { followUpStopReason, recordOutboundSent } from "../shared/conversations/followups.service.js";
+import { processPendingEvents } from "../shared/conversations/events.service.js";
+import { enrollCampaigns } from "../shared/campaigns/campaign.service.js";
+import ProviderEvent from "../shared/models/providerEvent.model.js";
 import { buildLeadPipeline } from "../agents/graphs/leadPipeline.graph.js";
 import { buildConversationReply } from "../agents/graphs/conversationReply.graph.js";
 import { draftOutreach } from "../agents/outreach.agent.js";
@@ -57,8 +61,8 @@ async function runGraph(wf: WorkflowDoc) {
     else {
         const base = { organizationId: wf.organizationId.toString(), workflowId: wf._id.toString(), correlationId: wf.correlationId };
         input = wf.type === "lead.pipeline"
-            ? { ...base, leadId: wf.entityId.toString() }
-            : { ...base, conversationId: wf.entityId.toString(), inboundMessageId: String(wf.input?.inboundMessageId) };
+            ? { ...base, leadId: wf.entityId.toString(), campaignId: wf.input?.campaignId ? String(wf.input.campaignId) : undefined }
+            : { ...base, conversationId: wf.entityId.toString(), inboundMessageId: String(wf.input?.inboundMessageId), autoSubmitted: Boolean(wf.input?.autoSubmitted) };
     }
 
     await graph.invoke(input as never, config);
@@ -71,9 +75,13 @@ async function runGraph(wf: WorkflowDoc) {
 async function runFollowUp(wf: WorkflowDoc) {
     const organizationId = wf.organizationId.toString();
     const conversation = await Conversation.findOne({ organizationId, _id: wf.entityId });
-    if (!conversation || conversation.status !== "waiting") return { outcome: "skipped" };
+    if (!conversation) return { outcome: "skipped" };
+    // conditions may have changed since scheduling: re-check from fresh records
+    const stop = await followUpStopReason(organizationId, conversation);
+    if (stop) return { outcome: "follow_up_cancelled", reason: stop };
     const lead = await Lead.findOne({ organizationId, _id: conversation.leadId });
     if (!lead) return { outcome: "skipped" };
+    const previous = await Message.findOne({ organizationId, conversationId: conversation._id, direction: "outbound", providerMessageId: { $type: "string" } }).sort({ sentAt: -1 }).lean();
 
     const n = Number(wf.input?.followUpNumber ?? conversation.followUpsSent + 1);
     const email = await draftOutreach(
@@ -86,6 +94,8 @@ async function runFollowUp(wf: WorkflowDoc) {
         subject: conversation.subject ? `Re: ${conversation.subject.replace(/^re:\s*/i, "")}` : email.subject,
         body: email.body, idempotencyKey: `followup:${conversation._id}:${n}`,
         correlationId: wf.correlationId, actor: { type: "agent", id: "follow_up" },
+        campaignId: conversation.campaignId ?? undefined, claims: email.claims,
+        inReplyTo: previous?.providerMessageId ?? undefined, references: previous?.providerMessageId ? [previous.providerMessageId] : undefined,
     });
     return { outcome: `follow_up_${result.status}`, messageId: result.messageId.toString() };
 }
@@ -162,6 +172,14 @@ async function dispatchMessage(msg: InstanceType<typeof Message>) {
         await Message.updateOne(scope, { status: "rejected", error: "Recipient is suppressed", lockedUntil: null });
         return;
     }
+    if (msg.kind === "follow_up") {
+        const conv = await Conversation.findOne({ organizationId, _id: msg.conversationId }).lean();
+        const stop = conv ? await followUpStopReason(organizationId, conv) : "Conversation deleted";
+        if (stop) {
+            await Message.updateOne(scope, { status: "rejected", error: `Follow-up cancelled: ${stop}`, lockedUntil: null });
+            return;
+        }
+    }
     if (msg.kind === "outreach" || msg.kind === "follow_up") {
         const { config } = await getCurrentPolicy(organizationId);
         if (isQuietHours(new Date(), config.outreach.quietHours)) {
@@ -170,15 +188,23 @@ async function dispatchMessage(msg: InstanceType<typeof Message>) {
         }
     }
 
-    const provider = getEmailProvider();
+    let provider: EmailProvider;
     try {
-        const { providerMessageId } = await provider.send({ to: msg.to, subject: msg.subject ?? "", text: msg.body, messageKey: msg._id.toString() });
+        provider = await getEmailProvider(organizationId);
+    } catch (error) {
+        // nothing was handed to a provider, so this is a definite (not uncertain) failure
+        await Message.updateOne(scope, { status: "failed", error: (error as Error).message, lockedUntil: null });
+        await alert(organizationId, "workflow_failed", (error as Error).message);
+        return;
+    }
+    try {
+        const { providerMessageId } = await provider.send({
+            to: msg.to, subject: msg.subject ?? "", text: msg.body, messageKey: msg._id.toString(),
+            inReplyTo: msg.inReplyTo ?? undefined, references: msg.references?.length ? msg.references : undefined,
+        });
         const now = new Date();
         await Message.updateOne(scope, { status: "sent", sentAt: now, providerMessageId, lockedUntil: null, error: null });
-        await Conversation.updateOne(
-            { organizationId, _id: msg.conversationId },
-            { lastOutboundAt: now, lastMessageAt: now, status: "waiting", ...(msg.kind === "follow_up" ? { $inc: { followUpsSent: 1 } } : {}) },
-        );
+        await recordOutboundSent(organizationId, msg, now);
         await Lead.updateOne({ organizationId, _id: msg.leadId, outreachStatus: { $in: ["not_started", "eligible"] } }, { outreachStatus: "active" });
         if (msg.proposalId) await Proposal.updateOne({ organizationId, _id: msg.proposalId }, { status: "sent" });
         await audit({
@@ -213,6 +239,7 @@ async function recoverStaleLeases() {
     const now = new Date();
     // a workflow whose worker died is resumed from its last checkpoint
     await Workflow.updateMany({ status: "running", lockedUntil: { $lt: now } }, { status: "queued", lockedUntil: null }).setOptions({ crossTenant: true });
+    await ProviderEvent.updateMany({ status: "processing", lockedUntil: { $lt: now } }, { status: "pending", lockedUntil: null }).setOptions({ crossTenant: true });
     // a message stuck in "sending" may or may not have gone out: never resend blindly
     await Message.updateMany(
         { status: "sending", lockedUntil: { $lt: now } },
@@ -220,16 +247,20 @@ async function recoverStaleLeases() {
     ).setOptions({ crossTenant: true });
 }
 
-// starts follow-up workflows for silent threads, within each tenant's follow-up policy
+// follow-ups are due when a waiting thread's nextActionAt passes; stop conditions are re-checked first
 async function scheduleFollowUps() {
-    const candidates = await Conversation.find({ status: "waiting", lastOutboundAt: { $lte: new Date(Date.now() - 3600_000) } })
+    const due = await Conversation.find({ status: "waiting", nextActionAt: { $lte: new Date() } })
         .limit(50).setOptions({ crossTenant: true }).lean();
-    for (const c of candidates) {
-        const { config } = await getCurrentPolicy(c.organizationId);
-        const o = config.outreach;
-        if (!o.enabled || c.followUpsSent >= o.maxFollowUps) continue;
-        if (!c.lastOutboundAt || Date.now() - c.lastOutboundAt.getTime() < o.minimumFollowUpIntervalHours * 3600_000) continue;
+    for (const c of due) {
+        const stop = await followUpStopReason(c.organizationId, c);
+        if (stop) {
+            await Conversation.updateOne({ organizationId: c.organizationId, _id: c._id }, { $unset: { nextActionAt: 1 } });
+            await audit({ organizationId: c.organizationId, actorType: "system", actorId: "scheduler", action: "followup.cancelled", targetType: "conversation", targetId: String(c._id), outcome: "success", metadata: { reason: stop } });
+            continue;
+        }
         const n = c.followUpsSent + 1;
+        // the workflow owns the next step; clearing nextActionAt stops re-scheduling
+        await Conversation.updateOne({ organizationId: c.organizationId, _id: c._id }, { $unset: { nextActionAt: 1 } });
         await startWorkflow({
             organizationId: c.organizationId, type: "conversation.followup", entityType: "conversation", entityId: c._id,
             input: { followUpNumber: n }, idempotencyKey: `followup:${c._id}:${n}`, actor: { type: "system", id: "scheduler" },
@@ -256,7 +287,7 @@ let lastFollowUpScan = 0;
 let lastRetentionRun = 0;
 
 // one pass over all queues; exported so tests can drive the worker deterministically
-export async function runOnce({ maxWorkflows = 5, maxMessages = 20 } = {}) {
+export async function runOnce({ maxWorkflows = 5, maxMessages = 20, force = false } = {}) {
     await recoverStaleLeases();
     for (let i = 0; i < maxWorkflows; i++) {
         const wf = await leaseWorkflow();
@@ -268,9 +299,11 @@ export async function runOnce({ maxWorkflows = 5, maxMessages = 20 } = {}) {
         if (!msg) break;
         await dispatchMessage(msg);
     }
-    if (Date.now() - lastFollowUpScan > 60_000) {
+    await processPendingEvents();
+    if (force || Date.now() - lastFollowUpScan > 60_000) {
         lastFollowUpScan = Date.now();
         await scheduleFollowUps();
+        await enrollCampaigns();
     }
     if (Date.now() - lastRetentionRun > 24 * 3600_000) {
         lastRetentionRun = Date.now();

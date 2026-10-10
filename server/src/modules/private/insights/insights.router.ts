@@ -10,7 +10,7 @@ import AuditEvent from "../../../shared/models/auditEvent.model.js";
 import Suppression from "../../../shared/models/suppression.model.js";
 import { authorize, ctxOf } from "../../../shared/tenancy/orgContext.middleware.js";
 import validate from "../../../shared/middlewares/validate.middleware.js";
-import { getCurrentPolicy, normalizeEmail, startOfUtcDay } from "../../../shared/policy/policy.service.js";
+import { getCurrentPolicy, normalizeEmail, startOfUtcDay, suppressEmail } from "../../../shared/policy/policy.service.js";
 import { audit } from "../../../shared/audit/audit.service.js";
 import { nextCursor, oid, pageParams, str } from "../../../shared/utils/request.util.js";
 import Ok from "../../../shared/responses/Ok.response.js";
@@ -107,11 +107,7 @@ router.get("/suppressions", authorize("leads.read"), async (req: Request, res: R
 router.post("/suppressions", authorize("leads.write"), validate(z.object({ value: z.string().trim().email() }).strict()), async (req: Request, res: Response) => {
     const ctx = ctxOf(req);
     const value = normalizeEmail(req.body.value);
-    await Suppression.updateOne(
-        { organizationId: ctx.organizationId, channel: "email", value },
-        { $setOnInsert: { organizationId: ctx.organizationId, channel: "email", value, reason: "manual", source: `user:${ctx.userId}` } },
-        { upsert: true },
-    );
+    await suppressEmail(ctx.organizationId, value, "manual", `user:${ctx.userId}`);
     await Message.updateMany({ organizationId: ctx.organizationId, to: value, direction: "outbound", status: { $in: ["queued", "pending_approval"] } }, { status: "rejected", error: "Recipient suppressed" });
     await audit({ organizationId: ctx.organizationId, actorType: "user", actorId: ctx.userId, action: "suppression.add", outcome: "success", metadata: { value } });
     return Created(res, "Suppressed");

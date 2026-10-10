@@ -9,6 +9,7 @@ import { findProhibitedClaims, getCurrentPolicy, isSuppressed, startOfUtcDay } f
 import { audit } from "../audit/audit.service.js";
 import { hashPayload } from "../utils/hash.util.js";
 import { alert } from "../alerts/alert.service.js";
+import Campaign from "../models/campaign.model.js";
 
 type Id = mongoose.Types.ObjectId;
 
@@ -32,6 +33,12 @@ export interface OutboundRequest {
     actor: { type: "agent" | "user"; id: string };
     // an agent can escalate on its own (e.g. pricing question) even when policy would allow
     forceApprovalReason?: string;
+    campaignId?: Id;
+    // threading headers for replies
+    inReplyTo?: string;
+    references?: string[];
+    // personalisation claims with their evidence check (from the outreach agent)
+    claims?: { claim: string; evidenceUrl?: string; verified: boolean }[];
 }
 
 export interface OutboundResult {
@@ -55,9 +62,9 @@ export async function proposeOutbound(req: OutboundRequest): Promise<OutboundRes
 
     const { organizationId } = req;
 
-    // idempotency: the same logical send returns the original outcome
+    // idempotency: the same logical send returns the original outcome (a saved draft is promoted instead)
     const existing = await Message.findOne({ organizationId, idempotencyKey: req.idempotencyKey }).lean();
-    if (existing) {
+    if (existing && existing.status !== "draft") {
         return {
             status: existing.status === "pending_approval" ? "pending_approval" : existing.status === "rejected" ? "rejected" : "queued",
             messageId: existing._id,
@@ -81,10 +88,11 @@ export async function proposeOutbound(req: OutboundRequest): Promise<OutboundRes
         result = evaluate({ type: "reply.send", recipientSuppressed: suppressed, containsProhibitedClaim: prohibitedHits.length > 0 }, config);
     } else {
         const conversation = await Conversation.findOne({ organizationId, _id: req.conversationId }).lean();
-        const newContactsToday = await Message.countDocuments({
-            organizationId, direction: "outbound", kind: "outreach",
-            status: { $in: ["queued", "sending", "sent", "uncertain"] }, createdAt: { $gte: startOfUtcDay() },
-        });
+        const sentStates = { $in: ["queued", "sending", "sent", "delivered", "uncertain"] };
+        const [newContactsToday, sentLastHour] = await Promise.all([
+            Message.countDocuments({ organizationId, direction: "outbound", kind: "outreach", status: sentStates, createdAt: { $gte: startOfUtcDay() } }),
+            Message.countDocuments({ organizationId, direction: "outbound", kind: { $in: ["outreach", "follow_up"] }, status: sentStates, createdAt: { $gte: new Date(Date.now() - 3600_000) } }),
+        ]);
         result = evaluate({
             type: "outreach.send",
             channel: "email",
@@ -95,6 +103,7 @@ export async function proposeOutbound(req: OutboundRequest): Promise<OutboundRes
             hasConsentBasis: Boolean(req.lead.consent?.basis && req.lead.consent.basis !== "none"),
             recipientSuppressed: suppressed,
             newContactsToday,
+            sentLastHour,
             containsProhibitedClaim: prohibitedHits.length > 0,
         }, config);
     }
@@ -102,16 +111,26 @@ export async function proposeOutbound(req: OutboundRequest): Promise<OutboundRes
         await alert(organizationId, "send_cap_reached", "Daily new-contact limit reached; further outreach is denied until tomorrow.");
     }
     if (prohibitedHits.length) result.reasons.push(`Prohibited phrases: ${prohibitedHits.join(", ")}`);
-    if (req.forceApprovalReason && result.decision === "allow") result = { decision: "needs_approval", reasons: [req.forceApprovalReason] };
+    // escalations never bypass a denial, they only turn an allow into a human review
+    const escalations = [
+        req.forceApprovalReason,
+        req.claims?.some((c) => !c.verified) ? "A personalisation claim is not backed by research evidence" : undefined,
+        req.campaignId && req.actor.type === "agent" && !(await Campaign.exists({ organizationId, _id: req.campaignId, autoSend: true })) ? "Campaign requires approval for each message" : undefined,
+    ].filter((r): r is string => Boolean(r));
+    if (escalations.length && result.decision === "allow") result = { decision: "needs_approval", reasons: escalations };
 
     const status = result.decision === "allow" ? "queued" : result.decision === "needs_approval" ? "pending_approval" : "rejected";
 
-    const message = await Message.create({
+    const fields = {
         organizationId, conversationId: req.conversationId, leadId: req.lead._id,
         direction: "outbound", kind: req.kind, to, subject: req.subject, body: req.body,
-        status, idempotencyKey: req.idempotencyKey,
+        status, idempotencyKey: req.idempotencyKey, campaignId: req.campaignId,
+        inReplyTo: req.inReplyTo, references: req.references, claims: req.claims ?? existing?.claims,
         error: status === "rejected" ? result.reasons.join("; ") : undefined,
-    });
+    };
+    const message = existing
+        ? (await Message.findOneAndUpdate({ organizationId, _id: existing._id, status: "draft" }, fields, { new: true }))!
+        : await Message.create(fields);
 
     let approvalId: Id | undefined;
     if (status === "pending_approval") {

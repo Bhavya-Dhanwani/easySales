@@ -12,6 +12,7 @@ export const PolicyConfigSchema = z.object({
         autoSend: z.boolean(),
         requireConsentBasis: z.boolean(),
         maxNewContactsPerDay: z.number().int().min(0).max(1000),
+        maxPerHour: z.number().int().min(1).max(500).default(10),
         maxFollowUps: z.number().int().min(0).max(10),
         minimumFollowUpIntervalHours: z.number().int().min(1).max(24 * 30),
         quietHours: z.object({
@@ -54,6 +55,7 @@ export const DEFAULT_POLICY: PolicyConfig = {
         autoSend: false,
         requireConsentBasis: true,
         maxNewContactsPerDay: 20,
+        maxPerHour: 10,
         maxFollowUps: 2,
         minimumFollowUpIntervalHours: 72,
         quietHours: { enabled: true, start: "19:00", end: "09:00", timezone: "Asia/Kolkata" },

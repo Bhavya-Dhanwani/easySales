@@ -9,6 +9,9 @@ import leadsRouter from "../../modules/private/leads/leads.router.js";
 import pipelineRouter from "../../modules/private/pipeline/pipeline.router.js";
 import insightsRouter from "../../modules/private/insights/insights.router.js";
 import researchRouter from "../../modules/private/research/research.router.js";
+import integrationsRouter from "../../modules/private/integrations/integrations.router.js";
+import campaignsRouter from "../../modules/private/campaigns/campaigns.router.js";
+import outreachRouter from "../../modules/private/outreach/outreach.router.js";
 import authMiddleware from "../middlewares/auth.middleware.js";
 import orgContext from "../tenancy/orgContext.middleware.js";
 import Forbidden from "../errors/Forbidden.error.js";
@@ -36,6 +39,9 @@ v1.use("/", settingsRouter);
 v1.use("/", pipelineRouter);
 v1.use("/", insightsRouter);
 v1.use("/", researchRouter);
+v1.use("/integrations", integrationsRouter);
+v1.use("/campaigns", campaignsRouter);
+v1.use("/", outreachRouter);
 router.use("/v1", v1);
 
 // exporting the router
