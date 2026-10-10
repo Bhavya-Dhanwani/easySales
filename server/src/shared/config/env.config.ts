@@ -40,6 +40,9 @@ const envSchema = z.object({
     // shared secret used to verify inbound provider webhooks
     WEBHOOK_SECRET: z.string().default(""),
 
+    // optional Slack/Discord-compatible webhook for operational alerts
+    ALERT_WEBHOOK_URL: z.union([z.literal(""), z.string().url()]).default(""),
+
     // run the background worker inside the API process (disable when running `npm run worker` separately)
     RUN_WORKER: booleanFromEnv(true),
 });

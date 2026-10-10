@@ -122,11 +122,11 @@ test("lead import deduplicates within the file and against existing leads", asyn
         { companyName: "Two dup", website: "two.io" },
         { companyName: "", contactEmail: "bad" },
     ];
-    const first = await request(app).post("/api/v1/leads/import").set(owner.auth).send({ leads });
+    const first = await request(app).post("/api/v1/leads/import").set(owner.auth).send({ rows: leads });
     assert.equal(first.status, 201);
-    assert.equal(first.body.data.created, 2);
-    assert.equal(first.body.data.duplicates.length, 2);
-    assert.equal(first.body.data.invalid.length, 1);
-    const second = await request(app).post("/api/v1/leads/import").set(owner.auth).send({ leads: leads.slice(0, 1) });
-    assert.equal(second.body.data.created, 0);
+    assert.equal(first.body.data.job.createdRows, 2);
+    assert.equal(first.body.data.job.duplicateRows, 2);
+    assert.equal(first.body.data.job.invalidRows, 1);
+    const second = await request(app).post("/api/v1/leads/import").set(owner.auth).send({ rows: leads.slice(0, 1) });
+    assert.equal(second.body.data.job.createdRows, 0);
 });

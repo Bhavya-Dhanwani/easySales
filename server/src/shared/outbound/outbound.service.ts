@@ -8,6 +8,7 @@ import { evaluate, PolicyResult } from "../policy/policy.engine.js";
 import { findProhibitedClaims, getCurrentPolicy, isSuppressed, startOfUtcDay } from "../policy/policy.service.js";
 import { audit } from "../audit/audit.service.js";
 import { hashPayload } from "../utils/hash.util.js";
+import { alert } from "../alerts/alert.service.js";
 
 type Id = mongoose.Types.ObjectId;
 
@@ -18,7 +19,7 @@ export interface OutboundRequest {
     lead: {
         _id: Id;
         contact?: { email?: string | null } | null;
-        qualification?: { status?: string | null } | null;
+        status?: string | null;
         consent?: { basis?: string | null } | null;
     };
     conversationId: Id;
@@ -90,12 +91,15 @@ export async function proposeOutbound(req: OutboundRequest): Promise<OutboundRes
             isFollowUp: req.kind === "follow_up",
             followUpsSent: conversation?.followUpsSent ?? 0,
             lastOutboundAt: conversation?.lastOutboundAt ?? null,
-            leadQualified: req.lead.qualification?.status === "qualified",
+            leadQualified: req.lead.status === "qualified",
             hasConsentBasis: Boolean(req.lead.consent?.basis && req.lead.consent.basis !== "none"),
             recipientSuppressed: suppressed,
             newContactsToday,
             containsProhibitedClaim: prohibitedHits.length > 0,
         }, config);
+    }
+    if (result.reasons.some((r) => r.startsWith("Daily new-contact limit"))) {
+        await alert(organizationId, "send_cap_reached", "Daily new-contact limit reached; further outreach is denied until tomorrow.");
     }
     if (prohibitedHits.length) result.reasons.push(`Prohibited phrases: ${prohibitedHits.join(", ")}`);
     if (req.forceApprovalReason && result.decision === "allow") result = { decision: "needs_approval", reasons: [req.forceApprovalReason] };

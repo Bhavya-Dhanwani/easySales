@@ -23,6 +23,8 @@ export const PolicyConfigSchema = z.object({
     }),
     qualification: z.object({
         minimumScore: z.number().int().min(0).max(100),
+        minimumEvidenceCoverage: z.number().int().min(0).max(100).default(60),
+        reviewScore: z.number().int().min(0).max(100).default(50),
     }),
     pricing: z.object({
         currency: z.string().length(3),
@@ -35,6 +37,11 @@ export const PolicyConfigSchema = z.object({
     budgets: z.object({
         maxLlmCallsPerDay: z.number().int().min(0).max(100000),
     }),
+    // data retention (days); enforced daily by the worker
+    retention: z.object({
+        messageDays: z.number().int().min(30).max(3650),
+        auditDays: z.number().int().min(90).max(3650),
+    }).default({ messageDays: 365, auditDays: 730 }),
 }).strict();
 
 export type PolicyConfig = z.infer<typeof PolicyConfigSchema>;
@@ -51,8 +58,9 @@ export const DEFAULT_POLICY: PolicyConfig = {
         minimumFollowUpIntervalHours: 72,
         quietHours: { enabled: true, start: "19:00", end: "09:00", timezone: "Asia/Kolkata" },
     },
-    qualification: { minimumScore: 60 },
+    qualification: { minimumScore: 70, minimumEvidenceCoverage: 60, reviewScore: 50 },
     pricing: { currency: "INR", minimumDealValueMinor: 25000_00, maximumDiscountPercent: 10 },
     proposals: { autoSend: false },
     budgets: { maxLlmCallsPerDay: 500 },
+    retention: { messageDays: 365, auditDays: 730 },
 };

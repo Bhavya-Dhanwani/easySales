@@ -76,6 +76,11 @@ This runs the API (which also serves the SPA), a separate agent worker, and Mong
 
 Point your mail provider's inbound webhook at `POST /api/webhooks/email/inbound` with JSON `{ eventId, organizationId, conversationId, from, subject, text }`. Sign it with the header `X-EasySales-Signature: sha256=<hex HMAC-SHA256 of the raw body using WEBHOOK_SECRET>`. Redelivered events are ignored, and the sender must match the lead on the thread.
 
+## Docs
+
+- [docs/API.md](docs/API.md): endpoint reference (Sprint 1 + 2)
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): environment, deploy, rollback, backups, security
+
 ## API
 
 Interactive docs live at `/docs`. Authenticated routes are under `/api/v1` and require a bearer access token. To pick an organization, send `X-Organization-Id`; membership is always verified on the server.

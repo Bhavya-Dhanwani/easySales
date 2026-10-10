@@ -8,7 +8,7 @@ import connectDB from "../src/shared/config/db.config.js";
 import env from "../src/shared/config/env.config.js";
 import User from "../src/shared/models/user.model.js";
 import BusinessProfile from "../src/shared/models/businessProfile.model.js";
-import Lead from "../src/shared/models/lead.model.js";
+import Lead, { leadDedupeKey } from "../src/shared/models/lead.model.js";
 import Membership from "../src/shared/models/membership.model.js";
 import { createOrganizationForUser } from "../src/shared/tenancy/organization.service.js";
 
@@ -59,8 +59,8 @@ async function main() {
     ];
     for (const l of leads) {
         await Lead.updateOne(
-            { organizationId, "contact.email": l.contact.email },
-            { $setOnInsert: { organizationId, ...l, consent: { basis: "legitimate_interest", source: "demo seed", recordedAt: new Date() }, source: { provider: "seed" } } },
+            { organizationId, dedupeKey: leadDedupeKey(l) },
+            { $setOnInsert: { organizationId, ...l, dedupeKey: leadDedupeKey(l), consent: { basis: "legitimate_interest", source: "demo seed", recordedAt: new Date() }, source: { provider: "seed" } } },
             { upsert: true },
         );
     }

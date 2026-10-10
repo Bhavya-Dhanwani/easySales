@@ -13,12 +13,13 @@ after(stopDb);
 
 const FIXTURES = {
     research: {
-        summary: "Acme Dental runs three clinics in Pune and takes bookings by phone only.",
-        industry: "Healthcare", size: "11-50",
-        needs: ["Online appointment booking", "Faster mobile website"],
-        evidence: [{ claim: "Bookings are phone-only", fromWebsite: false, confidence: 0.7 }],
+        companySummary: "Acme Dental runs three clinics in Pune and takes bookings by phone only.",
+        industry: "Healthcare", employeeCountEstimate: 30,
+        findings: [{ claim: "Bookings are phone-only", sourceUrl: "", confidence: 0.7 }],
+        criteria: ["industry", "company_size", "service_need", "geography", "budget", "contact_relevance"].map((id) => ({ criterionId: id, result: "match", explanation: "From the imported record", evidenceUrls: ["lead-record"] })),
+        potentialNeeds: [{ need: "Online appointment booking", evidenceUrls: ["lead-record"], confidence: 0.6 }],
+        disqualifiers: [], conflicts: [],
     },
-    qualification: { score: 82, rationale: "Clinic chain in a target region with a clear booking gap.", matchedSignals: ["no online booking"], disqualifiersHit: [], missingInformation: [] },
     outreach: { subject: "Online booking for Acme Dental", body: "Hi Priya, I noticed bookings at Acme Dental are phone-only. We build booking flows for clinics. Would a short call next week be useful?" },
     follow_up: { subject: "Following up", body: "Hi Priya, just floating this back up in case online booking is on your list this quarter." },
     conversation: (user: string) => user.includes("price") ? {
@@ -65,11 +66,12 @@ test("lead pipeline: research → qualify → draft → human approval → send"
     await runOnce();
     const wf = await Workflow.findOne({ organizationId: owner.organizationId, _id: run.body.data.workflowId }).lean();
     assert.equal(wf?.status, "waiting_approval");
-    assert.deepEqual(calls.map((c) => c.agent), ["research", "qualification", "outreach"]);
+    assert.deepEqual(calls.map((c) => c.agent), ["research", "outreach"]);
     assert.equal(mailbox.length, 0, "nothing is sent before approval");
 
     const lead = (await request(app).get(`/api/v1/leads/${leadId}`).set(owner.auth)).body.data;
-    assert.equal(lead.lead.qualification.status, "qualified");
+    assert.equal(lead.lead.status, "qualified");
+    assert.equal(lead.lead.qualification.score, 100);
     assert.equal(lead.lead.research.evidence[0].verified, false, "claims not from a fetched page stay unverified");
     assert.match(lead.messages[0].body, /unsubscribe/, "opt-out footer is always appended");
 

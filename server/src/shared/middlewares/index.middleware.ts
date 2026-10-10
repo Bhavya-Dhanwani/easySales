@@ -34,7 +34,7 @@ function applyMiddlewares(app: Express) {
     app.use("/api", rateLimit({ windowMs: 60_000, limit: 300, standardHeaders: "draft-8", legacyHeaders: false }));
 
     // keeping the raw bytes so webhook signatures can be verified
-    app.use(express.json({ limit: "1mb", verify: (req, res, buf) => { (req as { rawBody?: Buffer }).rawBody = buf; } }));
+    app.use(express.json({ limit: "2mb", verify: (req, res, buf) => { (req as { rawBody?: Buffer }).rawBody = buf; } }));
 
     app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 

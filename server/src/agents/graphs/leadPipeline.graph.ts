@@ -3,10 +3,9 @@ import mongoose from "mongoose";
 import { Annotation, END, START, StateGraph, interrupt } from "@langchain/langgraph";
 import Lead from "../../shared/models/lead.model.js";
 import Message from "../../shared/models/message.model.js";
-import { getCurrentPolicy } from "../../shared/policy/policy.service.js";
+import Workflow from "../../shared/models/workflow.model.js";
+import { runResearch } from "../../shared/research/research.service.js";
 import { proposeOutbound } from "../../shared/outbound/outbound.service.js";
-import { researchLead } from "../research.agent.js";
-import { qualifyLead } from "../qualification.agent.js";
 import { draftOutreach } from "../outreach.agent.js";
 import { ensureConversation, getCheckpointer, loadProfile, markStep } from "./common.js";
 
@@ -31,45 +30,16 @@ async function getLead(s: S) {
     return lead;
 }
 
-// 1. Research the company (skipped if already done — nodes are safe to re-run)
+// 1. Research + deterministic qualification (skipped if this lead already has a report)
 async function research(s: S) {
     await markStep(s.organizationId, s.workflowId, "research");
     const lead = await getLead(s);
-    if (lead.research?.status === "done") return {};
-
-    lead.set("research.status", "running");
-    await lead.save();
-
-    const profile = await loadProfile(s.organizationId);
-    try {
-        const r = await researchLead(ctxOf(s), { company: lead.company, contact: lead.contact ?? undefined }, profile);
-        lead.set("research", { status: "done", summary: r.summary, needs: r.needs, evidence: r.evidence, researchedAt: new Date() });
-        if (!lead.company.industry && r.industry) lead.set("company.industry", r.industry);
-        if (!lead.company.size && r.size) lead.set("company.size", r.size);
-        await lead.save();
-    } catch (error) {
-        lead.set("research.status", "failed");
-        await lead.save();
-        throw error;
+    if (lead.research?.status !== "done") {
+        const wf = await Workflow.findOne({ organizationId: s.organizationId, _id: s.workflowId }, { createdAt: 1 }).lean();
+        await runResearch({ organizationId: s.organizationId, leadId: s.leadId, workflowId: s.workflowId, correlationId: s.correlationId, requestedAt: wf?.createdAt ?? new Date() });
     }
-    return {};
-}
-
-// 2. Score against the ICP; deterministic rules decide the status
-async function qualify(s: S) {
-    await markStep(s.organizationId, s.workflowId, "qualify");
-    const lead = await getLead(s);
-    const profile = await loadProfile(s.organizationId);
-    const { config } = await getCurrentPolicy(s.organizationId);
-
-    const q = await qualifyLead(ctxOf(s), lead, lead.research ?? {}, profile, config.qualification.minimumScore);
-    lead.set("qualification", q);
-    if (q.status === "qualified") {
-        if (lead.opportunityStage === "new") lead.opportunityStage = "qualified";
-        if (lead.outreachStatus === "not_started") lead.outreachStatus = "eligible";
-    }
-    await lead.save();
-    return { outcome: q.status };
+    const fresh = await getLead(s);
+    return { outcome: fresh.status };
 }
 
 // 3. Draft a first-touch email and pass it through the policy gate
@@ -118,12 +88,10 @@ async function awaitApproval(s: S) {
 export async function buildLeadPipeline() {
     return new StateGraph(LeadPipelineState)
         .addNode("research", research)
-        .addNode("qualify", qualify)
         .addNode("draft", draft)
         .addNode("await_approval", awaitApproval)
         .addEdge(START, "research")
-        .addEdge("research", "qualify")
-        .addConditionalEdges("qualify", (s: S) => (s.outcome === "qualified" ? "draft" : END), ["draft", END])
+        .addConditionalEdges("research", (s: S) => (s.outcome === "qualified" ? "draft" : END), ["draft", END])
         .addConditionalEdges("draft", (s: S) => (s.sendStatus === "pending_approval" ? "await_approval" : END), ["await_approval", END])
         .addEdge("await_approval", END)
         .compile({ checkpointer: await getCheckpointer() });

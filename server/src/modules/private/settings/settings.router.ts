@@ -9,6 +9,7 @@ import { PolicyConfigSchema } from "../../../shared/policy/policy.schema.js";
 import { getCurrentPolicy, publishPolicy } from "../../../shared/policy/policy.service.js";
 import { audit } from "../../../shared/audit/audit.service.js";
 import Ok from "../../../shared/responses/Ok.response.js";
+import { CRITERIA, CriterionId, DEFAULT_WEIGHTS } from "../../../shared/qualification/scoring.js";
 
 const router = express.Router();
 
@@ -34,6 +35,8 @@ const BusinessProfileSchema = z.object({
     approvedClaims: tags,
     prohibitedClaims: tags,
     caseStudies: z.array(z.object({ title: text(200), summary: text(1500) })).max(20),
+    scoringWeights: z.object(Object.fromEntries(CRITERIA.map((c) => [c.id, z.number().int().min(0).max(100)])) as Record<CriterionId, z.ZodNumber>)
+        .refine((w) => Object.values(w).some((v) => v > 0), "At least one criterion needs weight").optional(),
 }).strict();
 
 /*
@@ -42,7 +45,7 @@ const BusinessProfileSchema = z.object({
 router.get("/business-profile", authorize("profile.read"), async (req: Request, res: Response) => {
     const ctx = ctxOf(req);
     const profile = await BusinessProfile.findOne({ organizationId: ctx.organizationId }).lean();
-    return Ok(res, "Business profile", { profile });
+    return Ok(res, "Business profile", { profile, criteria: CRITERIA, defaultWeights: DEFAULT_WEIGHTS });
 });
 
 /*
@@ -57,7 +60,8 @@ router.put("/business-profile", authorize("profile.write"), validate(BusinessPro
     }
     const profile = await BusinessProfile.findOneAndUpdate(
         { organizationId: ctx.organizationId },
-        { $set: req.body },
+        // a new profile version: research and qualification record which version they used
+        { $set: req.body, $inc: { version: 1 } },
         { new: true, upsert: true, runValidators: true },
     ).lean();
     await audit({ organizationId: ctx.organizationId, actorType: "user", actorId: ctx.userId, action: "business_profile.update", outcome: "success" });

@@ -8,6 +8,7 @@ import { evaluate } from "../shared/policy/policy.engine.js";
 import { getCurrentPolicy, llmCallsToday } from "../shared/policy/policy.service.js";
 import { audit } from "../shared/audit/audit.service.js";
 import ApiError from "../shared/utils/ApiError.util.js";
+import { alert } from "../shared/alerts/alert.service.js";
 
 export interface AgentRunContext {
     organizationId: mongoose.Types.ObjectId | string;
@@ -41,6 +42,7 @@ export async function runAgent<S extends ZodTypeAny>(
             decision: "deny", outcome: "denied", policyVersion: version, correlationId: ctx.correlationId,
             metadata: { reasons: budget.reasons },
         });
+        await alert(ctx.organizationId, "budget_exhausted", "Daily AI budget exhausted; agent runs are paused until tomorrow or the budget is raised.");
         throw new BudgetExceededError(budget.reasons.join("; "));
     }
 

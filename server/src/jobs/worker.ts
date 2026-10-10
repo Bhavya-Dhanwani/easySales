@@ -18,6 +18,10 @@ import { getEmailProvider } from "../providers/email.provider.js";
 import { buildLeadPipeline } from "../agents/graphs/leadPipeline.graph.js";
 import { buildConversationReply } from "../agents/graphs/conversationReply.graph.js";
 import { draftOutreach } from "../agents/outreach.agent.js";
+import { runResearch } from "../shared/research/research.service.js";
+import { alert } from "../shared/alerts/alert.service.js";
+import Organization from "../shared/models/organization.model.js";
+import AuditEvent from "../shared/models/auditEvent.model.js";
 import { loadProfile } from "../agents/graphs/common.js";
 import logger from "../shared/config/logger.config.js";
 
@@ -94,6 +98,9 @@ async function executeWorkflow(wf: WorkflowDoc) {
             await Workflow.updateOne(scope, interrupted
                 ? { status: "waiting_approval", resume: null, lockedUntil: null, currentStep: "awaiting_approval" }
                 : { status: "completed", resume: null, lockedUntil: null, currentStep: "done", result: { outcome: values.outcome ?? null } });
+        } else if (wf.type === "lead.research") {
+            const r = await runResearch({ organizationId: wf.organizationId, leadId: wf.entityId, workflowId: wf._id.toString(), correlationId: wf.correlationId, requestedAt: wf.createdAt });
+            await Workflow.updateOne(scope, { status: "completed", lockedUntil: null, currentStep: "done", result: { outcome: r.stale ? "stale_result_discarded" : r.status } });
         } else if (wf.type === "proposal.generate") {
             await generateProposalBody(wf.organizationId.toString(), wf.entityId.toString(), wf._id.toString(), wf.correlationId);
             await Workflow.updateOne(scope, { status: "completed", lockedUntil: null, currentStep: "done", result: { outcome: "proposal_drafted" } });
@@ -114,6 +121,14 @@ async function executeWorkflow(wf: WorkflowDoc) {
             nextRunAt: new Date(Date.now() + 30_000 * 2 ** (wf.attempts - 1)),
         });
         if (giveUp) {
+            // research that can no longer succeed is visible on the lead, never silently stuck
+            if (wf.type === "lead.research" || wf.type === "lead.pipeline") {
+                await Lead.updateOne(
+                    { organizationId: wf.organizationId, _id: wf.entityId, status: { $in: ["research_queued", "researching", "new"] } },
+                    { status: "research_failed", "research.status": "failed" },
+                );
+            }
+            if (err.code !== "BUDGET_EXCEEDED") await alert(wf.organizationId, "workflow_failed", `${wf.type} failed: ${err.message}`, { workflowId: wf._id.toString(), code: err.code });
             await audit({
                 organizationId: wf.organizationId, actorType: "system", actorId: "worker", action: "workflow.failed",
                 targetType: wf.entityType, targetId: wf.entityId.toString(), outcome: "failure", correlationId: wf.correlationId,
@@ -182,6 +197,7 @@ async function dispatchMessage(msg: InstanceType<typeof Message>) {
             status, error: err.message?.slice(0, 500), lockedUntil: null,
             notBefore: new Date(Date.now() + 60_000 * msg.attempts),
         });
+        if (status === "uncertain") await alert(organizationId, "uncertain_send", "A message may or may not have been delivered; check the provider before resending.", { messageId: msg._id.toString() });
         await audit({
             organizationId, actorType: "system", actorId: `email:${provider.name}`, action: "message.send_failed",
             targetType: "message", targetId: msg._id.toString(), outcome: status === "uncertain" ? "uncertain" : "failure",
@@ -220,9 +236,23 @@ async function scheduleFollowUps() {
     }
 }
 
+// daily retention: message bodies and audit events older than each tenant's policy are deleted
+export async function enforceRetention(now = new Date()) {
+    const orgs = await Organization.find({ status: "active" }, { _id: 1 }).lean();
+    for (const org of orgs) {
+        const { config } = await getCurrentPolicy(org._id);
+        const msgCutoff = new Date(now.getTime() - config.retention.messageDays * 86400_000);
+        const auditCutoff = new Date(now.getTime() - config.retention.auditDays * 86400_000);
+        await Message.deleteMany({ organizationId: org._id, createdAt: { $lt: msgCutoff }, status: { $nin: ["queued", "sending", "pending_approval"] } });
+        // audit events are append-only for application code; retention is the one sanctioned delete
+        await AuditEvent.collection.deleteMany({ organizationId: org._id, createdAt: { $lt: auditCutoff } });
+    }
+}
+
 /* ------------------------------- loop -------------------------------- */
 
 let lastFollowUpScan = 0;
+let lastRetentionRun = 0;
 
 // one pass over all queues; exported so tests can drive the worker deterministically
 export async function runOnce({ maxWorkflows = 5, maxMessages = 20 } = {}) {
@@ -240,6 +270,10 @@ export async function runOnce({ maxWorkflows = 5, maxMessages = 20 } = {}) {
     if (Date.now() - lastFollowUpScan > 60_000) {
         lastFollowUpScan = Date.now();
         await scheduleFollowUps();
+    }
+    if (Date.now() - lastRetentionRun > 24 * 3600_000) {
+        lastRetentionRun = Date.now();
+        await enforceRetention();
     }
 }
 

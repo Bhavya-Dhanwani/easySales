@@ -3,9 +3,11 @@ import mongoose from "mongoose";
 import tenantPlugin, { tenantFields } from "../tenancy/tenant.plugin.js";
 
 export const OPPORTUNITY_STAGES = ["new", "qualified", "discovery", "proposal", "negotiation", "won", "lost"] as const;
-export const QUALIFICATION_STATUSES = ["unreviewed", "qualified", "disqualified", "needs_review"] as const;
+// research + qualification lifecycle (Sprint 2 pipeline)
+export const LEAD_STATUSES = ["new", "research_queued", "researching", "qualified", "needs_review", "disqualified", "research_failed"] as const;
 export const OUTREACH_STATUSES = ["not_started", "eligible", "active", "replied", "opted_out", "closed"] as const;
 export const CONSENT_BASES = ["none", "opt_in", "existing_customer", "legitimate_interest"] as const;
+export const MATCH_RESULTS = ["match", "partial", "mismatch", "unknown"] as const;
 
 const evidenceSchema = new mongoose.Schema({
     claim: { type: String, required: true },
@@ -16,13 +18,24 @@ const evidenceSchema = new mongoose.Schema({
     observedAt: { type: Date, default: Date.now },
 }, { _id: false });
 
+const criterionSchema = new mongoose.Schema({
+    criterionId: { type: String, required: true },
+    label: String,
+    weight: Number,
+    result: { type: String, enum: MATCH_RESULTS, required: true },
+    explanation: String,
+    evidenceUrls: [String],
+}, { _id: false });
+
 const companySchema = new mongoose.Schema({
     name: { type: String, required: true, trim: true, maxlength: 200 },
     website: { type: String, trim: true },
     domain: { type: String, lowercase: true, trim: true },
     industry: String,
     size: String,
+    employeeCount: { type: Number, min: 0 },
     country: String,
+    description: { type: String, maxlength: 2000 },
 }, { _id: false });
 
 // a prospective customer (company + primary contact) moving through the pipeline
@@ -39,6 +52,11 @@ const leadSchema = new mongoose.Schema({
         phone: String,
     },
 
+    // email, else domain, else normalized name; unique per tenant so concurrent imports cannot duplicate
+    dedupeKey: { type: String, required: true },
+
+    status: { type: String, enum: LEAD_STATUSES, default: "new" },
+
     consent: {
         basis: { type: String, enum: CONSENT_BASES, default: "none" },
         source: String,
@@ -46,8 +64,9 @@ const leadSchema = new mongoose.Schema({
     },
 
     source: {
-        provider: { type: String, default: "manual" },
+        provider: { type: String, enum: ["csv", "manual", "provider", "seed"], default: "manual" },
         externalId: String,
+        importId: { type: mongoose.Schema.Types.ObjectId, ref: "ImportJob" },
         importedAt: { type: Date, default: Date.now },
     },
 
@@ -56,14 +75,24 @@ const leadSchema = new mongoose.Schema({
         summary: String,
         needs: [String],
         evidence: [evidenceSchema],
+        sources: [String],
+        conflicts: [String],
+        // request time of the job that produced this report: older jobs may never overwrite it
+        generatedAt: Date,
         researchedAt: Date,
+        profileVersion: Number,
     },
 
     qualification: {
         score: { type: Number, min: 0, max: 100 },
+        evidenceCoverage: { type: Number, min: 0, max: 100 },
         rationale: String,
         flags: [String],
-        status: { type: String, enum: QUALIFICATION_STATUSES, default: "unreviewed" },
+        criteria: [criterionSchema],
+        evaluatedAt: Date,
+        profileVersion: Number,
+        policyVersion: Number,
+        overriddenBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     },
 
     outreachStatus: { type: String, enum: OUTREACH_STATUSES, default: "not_started" },
@@ -82,13 +111,18 @@ const leadSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 leadSchema.plugin(tenantPlugin);
+leadSchema.index({ organizationId: 1, dedupeKey: 1 }, { unique: true });
+leadSchema.index({ organizationId: 1, status: 1, updatedAt: -1 });
 leadSchema.index({ organizationId: 1, "company.domain": 1 });
+leadSchema.index({ organizationId: 1, "contact.email": 1 });
 leadSchema.index({ organizationId: 1, opportunityStage: 1, updatedAt: -1 });
-// one lead per contact email per tenant — the deduplication backstop
-leadSchema.index(
-    { organizationId: 1, "contact.email": 1 },
-    { unique: true, partialFilterExpression: { "contact.email": { $type: "string" } } }
-);
+
+// the same normalization everywhere a lead is created
+export function leadDedupeKey(l: { contact?: { email?: string | null } | null; company: { domain?: string | null; name: string } }) {
+    if (l.contact?.email) return `email:${l.contact.email.trim().toLowerCase()}`;
+    if (l.company.domain) return `domain:${l.company.domain.trim().toLowerCase()}`;
+    return `name:${l.company.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()}`;
+}
 
 const Lead = mongoose.model("Lead", leadSchema);
 

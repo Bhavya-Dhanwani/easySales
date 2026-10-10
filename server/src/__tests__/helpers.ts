@@ -27,10 +27,10 @@ export async function stopDb() {
 
 // deterministic stand-in for the model: returns a fixture per agent name
 export function fakeLlm(fixtures: Record<string, unknown | ((user: string) => unknown)>) {
-    const calls: { agent: string; user: string }[] = [];
+    const calls: { agent: string; user: string; system: string }[] = [];
     const gateway: LlmGateway = {
-        async structured({ agent, schema, user }) {
-            calls.push({ agent, user });
+        async structured({ agent, schema, user, system }) {
+            calls.push({ agent, user, system });
             const f = fixtures[agent];
             if (f === undefined) throw new Error(`No fixture for agent ${agent}`);
             const data = typeof f === "function" ? (f as (u: string) => unknown)(user) : f;

@@ -39,6 +39,12 @@ const businessProfileSchema = new mongoose.Schema({
 
     prohibitedClaims: [String],
 
+    // weight per ICP criterion (see qualification/scoring.ts); unset criteria use the defaults
+    scoringWeights: { type: Map, of: Number, default: undefined },
+
+    // bumped on every save, recorded on each research report and qualification
+    version: { type: Number, default: 1 },
+
     caseStudies: [{
         _id: false,
         title: { type: String, maxlength: 200 },

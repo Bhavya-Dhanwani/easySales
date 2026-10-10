@@ -30,7 +30,7 @@ router.get("/dashboard", authorize("leads.read"), async (req: Request, res: Resp
 
     const [stages, qualification, pendingApprovals, sent7d, replies7d, running, failed7d, usageToday, recent] = await Promise.all([
         Lead.aggregate([{ $match: { organizationId } }, { $group: { _id: "$opportunityStage", count: { $sum: 1 } } }]),
-        Lead.aggregate([{ $match: { organizationId } }, { $group: { _id: "$qualification.status", count: { $sum: 1 } } }]),
+        Lead.aggregate([{ $match: { organizationId } }, { $group: { _id: "$status", count: { $sum: 1 } } }]),
         Approval.countDocuments({ organizationId, status: "pending" }),
         Message.countDocuments({ organizationId, direction: "outbound", status: "sent", sentAt: { $gte: since7d } }),
         Message.countDocuments({ organizationId, direction: "inbound", createdAt: { $gte: since7d } }),

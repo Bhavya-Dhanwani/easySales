@@ -3,3 +3,4 @@ process.env.NODE_ENV = "test";
 process.env.RUN_WORKER = "false";
 process.env.SEND_MAIL = "false";
 process.env.WEBHOOK_SECRET = "test_webhook_secret";
+process.env.LLM_API_KEY = "sk-test-secret-must-never-reach-a-prompt";

@@ -8,6 +8,7 @@ import settingsRouter from "../../modules/private/settings/settings.router.js";
 import leadsRouter from "../../modules/private/leads/leads.router.js";
 import pipelineRouter from "../../modules/private/pipeline/pipeline.router.js";
 import insightsRouter from "../../modules/private/insights/insights.router.js";
+import researchRouter from "../../modules/private/research/research.router.js";
 import authMiddleware from "../middlewares/auth.middleware.js";
 import orgContext from "../tenancy/orgContext.middleware.js";
 import Forbidden from "../errors/Forbidden.error.js";
@@ -34,6 +35,7 @@ v1.use("/leads", leadsRouter);
 v1.use("/", settingsRouter);
 v1.use("/", pipelineRouter);
 v1.use("/", insightsRouter);
+v1.use("/", researchRouter);
 router.use("/v1", v1);
 
 // exporting the router
