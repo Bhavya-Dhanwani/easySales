@@ -24,13 +24,13 @@ export const human = (s?: string | null) => (s ?? '').replace(/[._]/g, ' ')
 // maps a status to a badge tone
 export function tone(status?: string | null): '' | 'ok' | 'warn' | 'bad' | 'accent' {
   switch (status) {
-    case 'qualified': case 'sent': case 'completed': case 'won': case 'approved': case 'accepted': case 'done': case 'success': case 'allow': case 'replied': case 'active':
+    case 'qualified': case 'match': case 'sent': case 'completed': case 'won': case 'approved': case 'accepted': case 'done': case 'success': case 'allow': case 'replied': case 'active':
       return 'ok'
-    case 'needs_review': case 'pending_approval': case 'waiting_approval': case 'pending': case 'uncertain': case 'needs_approval': case 'negotiation': case 'draft':
+    case 'needs_review': case 'partial': case 'completed_with_errors': case 'pending_approval': case 'waiting_approval': case 'pending': case 'uncertain': case 'needs_approval': case 'negotiation': case 'draft':
       return 'warn'
-    case 'disqualified': case 'failed': case 'rejected': case 'lost': case 'opted_out': case 'deny': case 'denied': case 'failure': case 'suppressed': case 'cancelled':
+    case 'disqualified': case 'failed': case 'research_failed': case 'mismatch': case 'rejected': case 'lost': case 'opted_out': case 'deny': case 'denied': case 'failure': case 'suppressed': case 'cancelled':
       return 'bad'
-    case 'running': case 'queued': case 'sending': case 'generating': case 'discovery': case 'proposal':
+    case 'running': case 'queued': case 'sending': case 'generating': case 'discovery': case 'proposal': case 'research_queued': case 'researching': case 'processing':
       return 'accent'
     default:
       return ''

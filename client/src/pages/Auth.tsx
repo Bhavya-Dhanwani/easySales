@@ -3,25 +3,25 @@ import { Link, Navigate, useNavigate, useParams } from 'react-router'
 import { Logo, useToast } from '../components/ui'
 import { useAuth } from '../lib/auth'
 import { api } from '../lib/api'
+import { photo } from '../lib/photos'
 
 function Shell({ index, title, children, foot }: { index: string; title: ReactNode; children: ReactNode; foot?: ReactNode }) {
   return (
     <div className="auth">
-      <aside className="auth-side">
-        <Link to="/" aria-label="Home"><Logo dark /></Link>
-        <div>
-          <p className="auth-quote">“Reason with AI.<br /><span className="serif">Authorize</span> with policy.<br />Execute with code.”</p>
-          <p className="label" style={{ color: '#8b8b93', marginTop: 18 }}>The easySales operating model</p>
-        </div>
-      </aside>
-      <main className="auth-main">
+      <main className="auth-main" style={{ position: 'relative' }}>
+        <Link className="top" to="/" aria-label="Home"><Logo /></Link>
         <div className="auth-box fade-in">
-          <div className="label">{index}</div>
-          <h1 className="h1" style={{ margin: '12px 0 28px' }}>{title}</h1>
+          <span className="eyebrow">{index}</span>
+          <h1 className="h1" style={{ margin: '16px 0 28px' }}>{title}</h1>
           {children}
           {foot && <div className="small muted" style={{ marginTop: 22 }}>{foot}</div>}
         </div>
       </main>
+      <aside className="auth-side">
+        <img src={photo('owner', 1000, 1300)} alt="" />
+        <p className="auth-quote">The AI <em>reasons</em>.<br />Your policy <em>decides</em>.<br />Code <em>executes</em>.</p>
+        <span className="small" style={{ color: '#d6e3db' }}>Every agent action is checked, approved where you want, and audited.</span>
+      </aside>
     </div>
   )
 }
@@ -46,13 +46,13 @@ export function Login() {
   const { busy, error, run } = useSubmit()
   if (user) return <Navigate to={user.isVerified ? '/app' : '/verify'} replace />
   return (
-    <Shell index="Log in" title={<>Welcome <span className="serif">back.</span></>}
+    <Shell index="Log in" title={<>Welcome <span className="hl">back.</span></>}
       foot={<>New here? <Link to="/signup">Create a workspace</Link> · <Link to="/forgot">Forgot password</Link></>}>
       <form className="stack" onSubmit={run(async () => { const u = await login(email, password); nav(u.isVerified ? '/app' : '/verify') })}>
         <label className="field"><span>Email</span><input className="input" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></label>
         <label className="field"><span>Password</span><input className="input" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} /></label>
         {error && <div className="form-error" role="alert">{error}</div>}
-        <button className="btn lg" disabled={busy}>{busy ? 'Signing in…' : 'Log in'}</button>
+        <button className="btn lg lime" disabled={busy}>{busy ? 'Signing in…' : 'Log in'}</button>
       </form>
     </Shell>
   )
@@ -66,7 +66,7 @@ export function Signup() {
   if (user) return <Navigate to={user.isVerified ? '/app' : '/verify'} replace />
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [k]: e.target.value })
   return (
-    <Shell index="Start free" title={<>Hire your <span className="serif">AI sales team.</span></>}
+    <Shell index="Start free" title={<>Hire your <span className="hl">AI sales team.</span></>}
       foot={<>Already have an account? <Link to="/login">Log in</Link></>}>
       <form className="stack" onSubmit={run(async () => {
         await signup({ ...form, organizationName: form.organizationName || undefined })
@@ -77,7 +77,7 @@ export function Signup() {
         <label className="field"><span>Work email</span><input className="input" type="email" required autoComplete="email" value={form.email} onChange={set('email')} /></label>
         <label className="field"><span>Password</span><input className="input" type="password" required minLength={8} autoComplete="new-password" value={form.password} onChange={set('password')} /><small>At least 8 characters.</small></label>
         {error && <div className="form-error" role="alert">{error}</div>}
-        <button className="btn lg" disabled={busy}>{busy ? 'Creating…' : 'Create workspace'}</button>
+        <button className="btn lg lime" disabled={busy}>{busy ? 'Creating…' : 'Create workspace'}</button>
       </form>
     </Shell>
   )
@@ -92,7 +92,7 @@ export function Verify() {
   if (ready && !user) return <Navigate to="/login" replace />
   if (user?.isVerified) return <Navigate to="/app" replace />
   return (
-    <Shell index="Verify email" title={<>Check your <span className="serif">inbox.</span></>}
+    <Shell index="Verify email" title={<>Check your <span className="hl">inbox.</span></>}
       foot={<button className="linkish" onClick={() => api('/auth/resend-otp', { method: 'POST' }).then(() => toast('New code sent')).catch((e) => toast(e.message, true))}>Send a new code</button>}>
       <p className="muted" style={{ marginTop: -12 }}>We sent a 6-digit code to <b style={{ color: 'var(--ink)' }}>{user?.email}</b>.</p>
       <form className="stack" onSubmit={run(async () => { await verify(otp); nav('/app/onboarding') })}>
@@ -100,7 +100,7 @@ export function Verify() {
           <input className="input mono" style={{ fontSize: 22, letterSpacing: '0.4em', textAlign: 'center' }} inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" maxLength={6} required value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))} />
         </label>
         {error && <div className="form-error" role="alert">{error}</div>}
-        <button className="btn lg" disabled={busy || otp.length !== 6}>{busy ? 'Verifying…' : 'Verify'}</button>
+        <button className="btn lg lime" disabled={busy || otp.length !== 6}>{busy ? 'Verifying…' : 'Verify'}</button>
       </form>
     </Shell>
   )
@@ -111,12 +111,12 @@ export function Forgot() {
   const [sent, setSent] = useState(false)
   const { busy, error, run } = useSubmit()
   return (
-    <Shell index="Reset password" title={<>Forgot it? <span className="serif">Happens.</span></>} foot={<Link to="/login">Back to log in</Link>}>
+    <Shell index="Reset password" title={<>Forgot it? <span className="hl">Happens.</span></>} foot={<Link to="/login">Back to log in</Link>}>
       {sent ? <p className="lede">If an account exists for {email}, a reset link is on its way.</p> : (
         <form className="stack" onSubmit={run(async () => { await api('/auth/forgot-password', { body: { email } }); setSent(true) })}>
           <label className="field"><span>Email</span><input className="input" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></label>
           {error && <div className="form-error" role="alert">{error}</div>}
-          <button className="btn lg" disabled={busy}>Send reset link</button>
+          <button className="btn lg lime" disabled={busy}>Send reset link</button>
         </form>
       )}
     </Shell>
@@ -130,11 +130,11 @@ export function Reset() {
   const [password, setPassword] = useState('')
   const { busy, error, run } = useSubmit()
   return (
-    <Shell index="Reset password" title={<>Choose a new <span className="serif">password.</span></>}>
+    <Shell index="Reset password" title={<>Choose a new <span className="hl">password.</span></>}>
       <form className="stack" onSubmit={run(async () => { await api('/auth/reset-password', { body: { token, password } }); toast('Password updated'); nav('/login') })}>
         <label className="field"><span>New password</span><input className="input" type="password" minLength={8} required autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
         {error && <div className="form-error" role="alert">{error}</div>}
-        <button className="btn lg" disabled={busy}>Update password</button>
+        <button className="btn lg lime" disabled={busy}>Update password</button>
       </form>
     </Shell>
   )

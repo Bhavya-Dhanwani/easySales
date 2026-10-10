@@ -1,15 +1,28 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { Link, Route, Routes, useLocation } from 'react-router'
-import Landing from './pages/Landing'
 import { Forgot, Login, Reset, Signup, Verify } from './pages/Auth'
-import AppLayout from './app/AppLayout'
-import Overview from './app/Overview'
-import Onboarding from './app/Onboarding'
-import Leads from './app/Leads'
-import LeadDetail from './app/LeadDetail'
-import { Approvals, Inbox, Runs } from './app/Work'
-import { Audit, Business, Policies, Suppressions, Team, Usage } from './app/Settings'
-import { Empty } from './components/ui'
+import { Empty, Spinner } from './components/ui'
+
+// route-level code splitting: the landing page and the app load separately
+const Landing = lazy(() => import('./pages/Landing'))
+const AppLayout = lazy(() => import('./app/AppLayout'))
+const Overview = lazy(() => import('./app/Overview'))
+const Onboarding = lazy(() => import('./app/Onboarding'))
+const Leads = lazy(() => import('./app/Leads'))
+const LeadDetail = lazy(() => import('./app/LeadDetail'))
+const ImportWizard = lazy(() => import('./app/ImportWizard'))
+const Research = lazy(() => import('./app/Research'))
+const work = () => import('./app/Work')
+const Approvals = lazy(() => work().then((m) => ({ default: m.Approvals })))
+const Inbox = lazy(() => work().then((m) => ({ default: m.Inbox })))
+const Runs = lazy(() => work().then((m) => ({ default: m.Runs })))
+const settings = () => import('./app/Settings')
+const Audit = lazy(() => settings().then((m) => ({ default: m.Audit })))
+const Business = lazy(() => settings().then((m) => ({ default: m.Business })))
+const Policies = lazy(() => settings().then((m) => ({ default: m.Policies })))
+const Suppressions = lazy(() => settings().then((m) => ({ default: m.Suppressions })))
+const Team = lazy(() => settings().then((m) => ({ default: m.Team })))
+const Usage = lazy(() => settings().then((m) => ({ default: m.Usage })))
 
 // scroll to top on route change (keeps #hash links working)
 function ScrollReset() {
@@ -22,6 +35,7 @@ export default function App() {
   return (
     <>
       <ScrollReset />
+      <Suspense fallback={<div style={{ display: 'grid', placeItems: 'center', minHeight: '60vh' }}><Spinner /></div>}>
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
@@ -33,7 +47,9 @@ export default function App() {
           <Route index element={<Overview />} />
           <Route path="onboarding" element={<Onboarding />} />
           <Route path="leads" element={<Leads />} />
+          <Route path="leads/import" element={<ImportWizard />} />
           <Route path="leads/:id" element={<LeadDetail />} />
+          <Route path="research" element={<Research />} />
           <Route path="inbox" element={<Inbox />} />
           <Route path="approvals" element={<Approvals />} />
           <Route path="runs" element={<Runs />} />
@@ -46,6 +62,7 @@ export default function App() {
         </Route>
         <Route path="*" element={<div style={{ padding: '15vh 16px' }}><Empty title="Nothing here." action={<Link className="btn" to="/">Go home</Link>} /></div>} />
       </Routes>
+      </Suspense>
     </>
   )
 }

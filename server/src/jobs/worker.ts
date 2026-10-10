@@ -99,6 +99,7 @@ async function executeWorkflow(wf: WorkflowDoc) {
                 ? { status: "waiting_approval", resume: null, lockedUntil: null, currentStep: "awaiting_approval" }
                 : { status: "completed", resume: null, lockedUntil: null, currentStep: "done", result: { outcome: values.outcome ?? null } });
         } else if (wf.type === "lead.research") {
+            await Workflow.updateOne(scope, { currentStep: "research" });
             const r = await runResearch({ organizationId: wf.organizationId, leadId: wf.entityId, workflowId: wf._id.toString(), correlationId: wf.correlationId, requestedAt: wf.createdAt });
             await Workflow.updateOne(scope, { status: "completed", lockedUntil: null, currentStep: "done", result: { outcome: r.stale ? "stale_result_discarded" : r.status } });
         } else if (wf.type === "proposal.generate") {

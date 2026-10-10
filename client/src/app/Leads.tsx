@@ -1,42 +1,27 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
-import Papa from 'papaparse'
 import { api } from '../lib/api'
-import { ago } from '../lib/format'
-import { STAGES, type Lead } from '../lib/types'
+import { ago, human } from '../lib/format'
+import { LEAD_STATUSES, type Lead } from '../lib/types'
 import { Badge, Empty, PageHead, Spinner, useLoad, useToast } from '../components/ui'
 import { useAuth } from '../lib/auth'
 
-const CONSENT = [
+export const CONSENT = [
   ['legitimate_interest', 'Legitimate interest (B2B)'],
   ['opt_in', 'Opted in'],
   ['existing_customer', 'Existing customer'],
   ['none', 'No basis recorded'],
 ] as const
 
-// maps loose CSV headers onto the import fields
-const HEADER_MAP: Record<string, string> = {
-  company: 'companyName', companyname: 'companyName', 'company name': 'companyName', organization: 'companyName', business: 'companyName',
-  website: 'website', url: 'website', domain: 'website', site: 'website',
-  industry: 'industry', size: 'size', 'company size': 'size', country: 'country', location: 'country',
-  name: 'contactName', contact: 'contactName', 'contact name': 'contactName', 'full name': 'contactName', 'first name': 'contactName',
-  title: 'contactTitle', role: 'contactTitle', 'job title': 'contactTitle', position: 'contactTitle',
-  email: 'contactEmail', 'email address': 'contactEmail', 'contact email': 'contactEmail', 'work email': 'contactEmail',
-  phone: 'contactPhone', mobile: 'contactPhone', consent: 'consentBasis',
-}
+interface Summary { total: number; counts: Record<string, number>; averageScore: number | null; averageEvidenceCoverage: number | null; qualifiedRate: number }
+interface Estimate { requested: number; eligible: number; estimatedAiCalls: number; estimatedTokens: number | null; dailyBudget: number }
 
 function AddLead({ onDone }: { onDone: () => void }) {
   const toast = useToast()
-  const [mode, setMode] = useState<'one' | 'csv'>('one')
   const [busy, setBusy] = useState(false)
   const [form, setForm] = useState({ companyName: '', website: '', industry: '', country: '', contactName: '', contactTitle: '', contactEmail: '', consentBasis: 'legitimate_interest' })
-  const [csvRows, setCsvRows] = useState<Record<string, string>[]>([])
-  const [csvConsent, setCsvConsent] = useState('legitimate_interest')
-  const [result, setResult] = useState<{ created: number; duplicates: unknown[]; invalid: { row: number; error: string }[] } | null>(null)
-
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm({ ...form, [k]: e.target.value })
-
-  async function addOne(e: FormEvent) {
+  async function submit(e: FormEvent) {
     e.preventDefault()
     setBusy(true)
     try {
@@ -45,79 +30,32 @@ function AddLead({ onDone }: { onDone: () => void }) {
       onDone()
     } catch (err) { toast((err as Error).message, true) } finally { setBusy(false) }
   }
-
-  function parse(file: File) {
-    Papa.parse<Record<string, string>>(file, {
-      header: true,
-      skipEmptyLines: true,
-      transformHeader: (h) => HEADER_MAP[h.trim().toLowerCase()] ?? h.trim(),
-      complete: (r) => setCsvRows(r.data.slice(0, 500)),
-      error: (err) => toast(err.message, true),
-    })
-  }
-
-  async function importCsv() {
-    setBusy(true)
-    try {
-      const leads = csvRows.map((r) => ({
-        companyName: r.companyName ?? '', website: r.website, industry: r.industry, size: r.size, country: r.country,
-        contactName: r.contactName, contactTitle: r.contactTitle, contactEmail: r.contactEmail, contactPhone: r.contactPhone,
-        consentBasis: CONSENT.some(([v]) => v === r.consentBasis) ? r.consentBasis : csvConsent,
-      }))
-      const res = await api<{ created: number; duplicates: unknown[]; invalid: { row: number; error: string }[] }>('/v1/leads/import', { body: { leads } })
-      setResult(res)
-      toast(`${res.created} leads imported`)
-      if (res.created) onDone()
-    } catch (err) { toast((err as Error).message, true) } finally { setBusy(false) }
-  }
-
   return (
-    <div className="card fade-in">
-      <div className="tabs" style={{ marginTop: -8 }}>
-        <button className={mode === 'one' ? 'active' : ''} onClick={() => setMode('one')}>One lead</button>
-        <button className={mode === 'csv' ? 'active' : ''} onClick={() => setMode('csv')}>CSV import</button>
+    <form className="card stack fade-in" onSubmit={submit}>
+      <div className="h2">Add a lead</div>
+      <div className="grid-4">
+        <label className="field"><span>Company *</span><input className="input" required value={form.companyName} onChange={set('companyName')} /></label>
+        <label className="field"><span>Website</span><input className="input" placeholder="acme.com" value={form.website} onChange={set('website')} /></label>
+        <label className="field"><span>Industry</span><input className="input" value={form.industry} onChange={set('industry')} /></label>
+        <label className="field"><span>Country</span><input className="input" value={form.country} onChange={set('country')} /></label>
+        <label className="field"><span>Contact name</span><input className="input" value={form.contactName} onChange={set('contactName')} /></label>
+        <label className="field"><span>Title</span><input className="input" value={form.contactTitle} onChange={set('contactTitle')} /></label>
+        <label className="field"><span>Email</span><input className="input" type="email" value={form.contactEmail} onChange={set('contactEmail')} /></label>
+        <label className="field"><span>Consent basis</span>
+          <select className="select" value={form.consentBasis} onChange={set('consentBasis')}>{CONSENT.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+        </label>
       </div>
-      {mode === 'one' ? (
-        <form className="stack" onSubmit={addOne}>
-          <div className="grid-3">
-            <label className="field"><span>Company *</span><input className="input" required value={form.companyName} onChange={set('companyName')} /></label>
-            <label className="field"><span>Website</span><input className="input" placeholder="acme.com" value={form.website} onChange={set('website')} /></label>
-            <label className="field"><span>Industry</span><input className="input" value={form.industry} onChange={set('industry')} /></label>
-            <label className="field"><span>Contact name</span><input className="input" value={form.contactName} onChange={set('contactName')} /></label>
-            <label className="field"><span>Title</span><input className="input" value={form.contactTitle} onChange={set('contactTitle')} /></label>
-            <label className="field"><span>Email</span><input className="input" type="email" value={form.contactEmail} onChange={set('contactEmail')} /></label>
-            <label className="field"><span>Country</span><input className="input" value={form.country} onChange={set('country')} /></label>
-            <label className="field"><span>Consent basis</span>
-              <select className="select" value={form.consentBasis} onChange={set('consentBasis')}>{CONSENT.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
-            </label>
-          </div>
-          <div><button className="btn" disabled={busy}>Add lead</button></div>
-        </form>
-      ) : (
-        <div className="stack">
-          <p className="small muted" style={{ margin: 0 }}>Columns like <span className="mono">company, website, name, title, email, country, industry</span> are recognised automatically. Up to 500 rows; duplicates are skipped.</p>
-          <input type="file" accept=".csv,text/csv" onChange={(e) => e.target.files?.[0] && parse(e.target.files[0])} />
-          {csvRows.length > 0 && (
-            <>
-              <div className="row-flex">
-                <span className="badge accent">{csvRows.length} rows</span>
-                <label className="field" style={{ minWidth: 260 }}><span>Default consent basis</span>
-                  <select className="select" value={csvConsent} onChange={(e) => setCsvConsent(e.target.value)}>{CONSENT.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
-                </label>
-              </div>
-              <div className="table-wrap"><table className="table"><thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Website</th></tr></thead>
-                <tbody>{csvRows.slice(0, 5).map((r, i) => <tr key={i}><td>{r.companyName}</td><td>{r.contactName}</td><td className="mono">{r.contactEmail}</td><td className="mono">{r.website}</td></tr>)}</tbody></table></div>
-              <div><button className="btn" disabled={busy} onClick={importCsv}>{busy ? 'Importing…' : `Import ${csvRows.length} leads`}</button></div>
-            </>
-          )}
-          {result && (
-            <div className="small">
-              <b>{result.created}</b> created · {result.duplicates.length} duplicates skipped · {result.invalid.length} invalid
-              {result.invalid.slice(0, 5).map((i) => <div key={i.row} className="form-error">Row {i.row}: {i.error}</div>)}
-            </div>
-          )}
-        </div>
-      )}
+      <div><button className="btn" disabled={busy}>Add lead</button></div>
+    </form>
+  )
+}
+
+export function FitCell({ score, coverage }: { score?: number; coverage?: number }) {
+  if (score === undefined) return <span className="muted">—</span>
+  return (
+    <div style={{ minWidth: 110 }}>
+      <div className="row-flex between" style={{ gap: 6 }}><b className="num" style={{ fontSize: 17 }}>{score}</b><span className="small muted">{coverage ?? 0}% evidence</span></div>
+      <div className="meter" style={{ height: 6 }}><i style={{ width: `${score}%` }} /></div>
     </div>
   )
 }
@@ -125,15 +63,23 @@ function AddLead({ onDone }: { onDone: () => void }) {
 export default function Leads() {
   const { org } = useAuth()
   const nav = useNavigate()
+  const toast = useToast()
+  // filters live in the URL so they survive going to a lead and back
   const [params, setParams] = useSearchParams()
-  const [q, setQ] = useState('')
-  const stage = params.get('stage') ?? ''
-  const adding = params.get('add') === '1'
+  const [selected, setSelected] = useState<string[]>([])
+  const [estimate, setEstimate] = useState<Estimate | null>(null)
+  const dialog = useRef<HTMLDialogElement>(null)
+  const f = (k: string) => params.get(k) ?? ''
+  const adding = f('add') === '1'
+  const query = ['status', 'industry', 'country', 'minScore', 'q'].filter((k) => f(k)).map((k) => `&${k}=${encodeURIComponent(f(k))}`).join('')
 
-  const { data, loading, reload } = useLoad(
-    () => api<{ leads: Lead[]; nextCursor: string | null }>(`/v1/leads?limit=100${stage ? `&stage=${stage}` : ''}${q ? `&q=${encodeURIComponent(q)}` : ''}`),
-    [org?.id, stage, q],
-  )
+  const { data, loading, reload } = useLoad(async () => {
+    const [list, summary] = await Promise.all([
+      api<{ leads: Lead[]; nextCursor: string | null }>(`/v1/leads?limit=100${query}`),
+      api<Summary>('/v1/pipeline/summary'),
+    ])
+    return { ...list, summary }
+  }, [org?.id, query], (d) => d.leads.some((l) => l.status === 'research_queued' || l.status === 'researching'))
 
   const update = (k: string, v: string | null) => {
     const next = new URLSearchParams(params)
@@ -141,38 +87,76 @@ export default function Leads() {
     setParams(next, { replace: true })
   }
 
+  const leads = data?.leads ?? []
+  const allSelected = leads.length > 0 && leads.every((l) => selected.includes(l._id))
+
+  async function openBulk() {
+    try {
+      setEstimate(await api<Estimate>('/v1/leads/bulk-research', { body: { leadIds: selected, dryRun: true } }))
+      dialog.current?.showModal()
+    } catch (e) { toast((e as Error).message, true) }
+  }
+
+  async function confirmBulk() {
+    try {
+      const r = await api<{ queued: number; skipped: number }>('/v1/leads/bulk-research', { body: { leadIds: selected } })
+      toast(`${r.queued} research jobs queued${r.skipped ? `, ${r.skipped} skipped` : ''}`)
+      dialog.current?.close()
+      setSelected([])
+      reload()
+    } catch (e) { toast((e as Error).message, true) }
+  }
+
   return (
     <div className="stack lg fade-in">
-      <PageHead index="02 / Leads" title={<>Every prospect, <span className="serif">one place.</span></>}>
-        <button className="btn" onClick={() => update('add', adding ? null : '1')}>{adding ? 'Close' : 'Add leads'}</button>
+      <PageHead index="Lead pipeline" title={<>Every prospect, <span className="hl">one place.</span></>}>
+        <Link className="btn ghost" to="/app/research">Research activity</Link>
+        <Link className="btn ghost" to="/app/leads/import">Import CSV</Link>
+        <button className="btn" onClick={() => update('add', adding ? null : '1')}>{adding ? 'Close' : 'Add lead'}</button>
       </PageHead>
 
       {adding && <AddLead onDone={() => { reload(); update('add', null) }} />}
 
-      <div className="row-flex between">
-        <div className="tabs" style={{ marginBottom: 0, border: 0 }}>
-          <button className={!stage ? 'active' : ''} onClick={() => update('stage', null)}>All</button>
-          {STAGES.map((s) => <button key={s} className={stage === s ? 'active' : ''} onClick={() => update('stage', s)}>{s}</button>)}
+      {data?.summary && (
+        <div className="status-tabs" role="tablist" aria-label="Filter by status">
+          <button className={`status-tab ${!f('status') ? 'active' : ''}`} onClick={() => update('status', null)}>All <b>{data.summary.total}</b></button>
+          {LEAD_STATUSES.map((s) => (
+            <button key={s} className={`status-tab ${f('status') === s ? 'active' : ''}`} onClick={() => update('status', s)}>{human(s)} <b>{data.summary.counts[s] ?? 0}</b></button>
+          ))}
         </div>
-        <input className="input" style={{ maxWidth: 280 }} placeholder="Search company, contact, email" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search leads" />
+      )}
+
+      <div className="row-flex">
+        <input className="input" style={{ flex: 2, minWidth: 200 }} placeholder="Search company, contact or email" defaultValue={f('q')} onChange={(e) => update('q', e.target.value || null)} aria-label="Search" />
+        <input className="input" style={{ flex: 1, minWidth: 140 }} placeholder="Industry" defaultValue={f('industry')} onBlur={(e) => update('industry', e.target.value || null)} aria-label="Industry" />
+        <input className="input" style={{ flex: 1, minWidth: 140 }} placeholder="Country" defaultValue={f('country')} onBlur={(e) => update('country', e.target.value || null)} aria-label="Country" />
+        <select className="select" style={{ flex: 1, minWidth: 140 }} value={f('minScore')} onChange={(e) => update('minScore', e.target.value || null)} aria-label="Minimum fit score">
+          <option value="">Any fit score</option>
+          {[50, 70, 85].map((n) => <option key={n} value={n}>Fit ≥ {n}</option>)}
+        </select>
       </div>
 
-      {loading ? <Spinner label="Loading leads" /> : !data?.leads.length ? (
-        <Empty title={stage || q ? 'No matches.' : 'No leads yet.'} action={!stage && !q && <button className="btn" onClick={() => update('add', '1')}>Add your first lead</button>}>
-          {stage || q ? 'Try another filter.' : 'Add a lead by hand or import a CSV. The agents take it from there.'}
+      {loading ? <Spinner label="Loading leads" /> : !leads.length ? (
+        <Empty title={query ? 'No matches.' : 'No leads yet.'} action={!query && <Link className="btn lime" to="/app/leads/import">Import your first CSV</Link>}>
+          {query ? 'Try another filter.' : 'Import a CSV or add a lead by hand. Research and scoring take it from there.'}
         </Empty>
       ) : (
         <div className="table-wrap">
           <table className="table">
-            <thead><tr><th>Company</th><th>Contact</th><th>Fit</th><th>Qualification</th><th>Outreach</th><th>Stage</th><th>Updated</th></tr></thead>
+            <thead><tr>
+              <th style={{ width: 36 }}><input type="checkbox" aria-label="Select all" checked={allSelected} onChange={(e) => setSelected(e.target.checked ? leads.map((l) => l._id) : [])} /></th>
+              <th>Company</th><th>Industry</th><th>Fit</th><th>Status</th><th>Stage</th><th>Last activity</th>
+            </tr></thead>
             <tbody>
-              {data.leads.map((l) => (
-                <tr key={l._id} className="row" onClick={() => nav(`/app/leads/${l._id}`)}>
-                  <td><Link to={`/app/leads/${l._id}`} style={{ textDecoration: 'none', fontWeight: 600 }}>{l.company.name}</Link><div className="small muted">{l.company.domain}</div></td>
-                  <td>{l.contact?.name ?? '—'}<div className="small muted mono">{l.contact?.email}</div></td>
-                  <td className="mono">{l.qualification?.score ?? '—'}</td>
-                  <td><Badge status={l.qualification?.status} /></td>
-                  <td><Badge status={l.outreachStatus} /></td>
+              {leads.map((l) => (
+                <tr key={l._id} className={`row ${selected.includes(l._id) ? 'selected' : ''}`} onClick={() => nav(`/app/leads/${l._id}`)}>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox" aria-label={`Select ${l.company.name}`} checked={selected.includes(l._id)} onChange={(e) => setSelected(e.target.checked ? [...selected, l._id] : selected.filter((id) => id !== l._id))} />
+                  </td>
+                  <td><Link to={`/app/leads/${l._id}`} style={{ textDecoration: 'none', fontWeight: 600 }}>{l.company.name}</Link><div className="small muted">{l.contact?.name ?? l.company.domain}</div></td>
+                  <td className="small">{l.company.industry ?? <span className="muted">—</span>}<div className="muted">{l.company.country}</div></td>
+                  <td><FitCell score={l.qualification?.score} coverage={l.qualification?.evidenceCoverage} /></td>
+                  <td>{l.status === 'researching' ? <span className="row-flex small" style={{ gap: 6 }}><span className="spinner" /> researching</span> : <Badge status={l.status} />}</td>
                   <td><Badge status={l.opportunityStage} /></td>
                   <td className="small muted">{ago(l.updatedAt)}</td>
                 </tr>
@@ -181,6 +165,33 @@ export default function Leads() {
           </table>
         </div>
       )}
+
+      {selected.length > 0 && (
+        <div className="selection-bar">
+          <span><b>{selected.length}</b> selected</span>
+          <button className="btn sm lime" onClick={openBulk}>Research selected</button>
+          <button className="btn sm ghost" onClick={() => setSelected([])}>Clear</button>
+        </div>
+      )}
+
+      <dialog ref={dialog} className="modal" aria-labelledby="bulk-title">
+        {estimate && (
+          <div className="stack">
+            <h2 id="bulk-title" className="h2">Research {estimate.eligible} lead{estimate.eligible === 1 ? '' : 's'}?</h2>
+            <p className="muted" style={{ margin: 0 }}>Each lead uses one AI research call; scoring is calculated by code, so it's free.</p>
+            <dl className="kv">
+              <dt>Selected</dt><dd>{estimate.requested}</dd>
+              <dt>Will run</dt><dd>{estimate.eligible} <span className="muted small">(already-queued leads are skipped)</span></dd>
+              <dt>AI calls</dt><dd>{estimate.estimatedAiCalls} of {estimate.dailyBudget} daily budget</dd>
+              <dt>Est. tokens</dt><dd>{estimate.estimatedTokens ? `≈ ${estimate.estimatedTokens.toLocaleString()}` : 'not enough history yet'}</dd>
+            </dl>
+            <div className="row-flex" style={{ justifyContent: 'flex-end' }}>
+              <button className="btn ghost" onClick={() => dialog.current?.close()}>Cancel</button>
+              <button className="btn lime" disabled={!estimate.eligible} onClick={confirmBulk}>Queue research</button>
+            </div>
+          </div>
+        )}
+      </dialog>
     </div>
   )
 }

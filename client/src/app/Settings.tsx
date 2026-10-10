@@ -40,14 +40,20 @@ export function Business() {
   const [p, setP] = useState<BusinessProfile | null>(null)
   const [busy, setBusy] = useState(false)
 
+  const [criteria, setCriteria] = useState<{ id: string; label: string }[]>([])
+  const [defaults, setDefaults] = useState<Record<string, number>>({})
+
   useEffect(() => {
-    api<{ profile: BusinessProfile | null }>('/v1/business-profile').then((d) => {
+    api<{ profile: BusinessProfile | null; criteria: { id: string; label: string }[]; defaultWeights: Record<string, number> }>('/v1/business-profile').then((d) => {
+      setCriteria(d.criteria)
+      setDefaults(d.defaultWeights)
       const prof = { ...EMPTY_PROFILE, ...(d.profile ?? {}) }
       setP({ ...prof, idealCustomerProfile: { ...EMPTY_PROFILE.idealCustomerProfile, ...prof.idealCustomerProfile } })
     })
   }, [org?.id])
 
   if (!p) return <Spinner label="Loading" />
+  const weights: Record<string, number> = { ...defaults, ...(p.scoringWeights ?? {}) }
   const set = <K extends keyof BusinessProfile>(k: K, v: BusinessProfile[K]) => setP({ ...p, [k]: v })
   const icp = (k: keyof BusinessProfile['idealCustomerProfile'], v: string[]) => setP({ ...p, idealCustomerProfile: { ...p.idealCustomerProfile, [k]: v } })
   const svc = (i: number, patch: Partial<Service>) => set('services', p.services.map((s, j) => (j === i ? { ...s, ...patch } : s)))
@@ -61,15 +67,16 @@ export function Business() {
         idealCustomerProfile: p!.idealCustomerProfile, brandVoice: p!.brandVoice,
         approvedClaims: p!.approvedClaims, prohibitedClaims: p!.prohibitedClaims,
         caseStudies: p!.caseStudies.filter((c) => c.title || c.summary),
+        ...(criteria.length ? { scoringWeights: Object.fromEntries(criteria.map((c) => [c.id, weights[c.id] ?? 0])) } : {}),
       }
       await api('/v1/business-profile', { method: 'PUT', body })
-      toast('Saved. Agents use this from the next run.')
+      toast('Saved as a new profile version. Re-qualify leads to apply new weights.')
     } catch (e) { toast((e as Error).message, true) } finally { setBusy(false) }
   }
 
   return (
     <div className="stack lg fade-in" style={{ maxWidth: 980 }}>
-      <PageHead index="06 / Business brain" title={<>What the agents <span className="serif">know.</span></>}>
+      <PageHead index="Business brain" title={<>What the agents <span className="hl">know.</span></>}>
         <button className="btn" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
       </PageHead>
 
@@ -115,6 +122,18 @@ export function Business() {
       </section>
 
       <section className="card stack">
+        <div className="row-flex between"><div className="label">Scoring weights</div><span className="small muted">Total {Object.values(weights).reduce((a, b) => a + b, 0)} · normalised automatically</span></div>
+        <p className="small muted" style={{ margin: 0 }}>How much each ICP criterion counts towards the fit score. Unknown criteria earn nothing but never count as a mismatch.</p>
+        <div className="grid-2">
+          {criteria.map((c) => (
+            <label key={c.id} className="field"><span>{c.label} · <b>{weights[c.id]}</b></span>
+              <input type="range" min={0} max={50} value={weights[c.id]} onChange={(e) => set('scoringWeights', { ...weights, [c.id]: Number(e.target.value) })} />
+            </label>
+          ))}
+        </div>
+      </section>
+
+      <section className="card stack">
         <div className="label">Claims</div>
         <label className="field"><span>Approved claims (the only things agents may assert)</span><Chips value={p.approvedClaims} onChange={(v) => set('approvedClaims', v)} placeholder="We have shipped 40+ products…" /></label>
         <label className="field"><span>Prohibited phrases (force human review)</span><Chips value={p.prohibitedClaims} onChange={(v) => set('prohibitedClaims', v)} placeholder="guaranteed, #1, cheapest…" /></label>
@@ -151,7 +170,7 @@ export function Policies() {
 
   return (
     <div className="stack lg fade-in" style={{ maxWidth: 900 }}>
-      <PageHead index={`07 / Autonomy · v${data.current.version}`} title={<>Draw the <span className="serif">lines.</span></>}>
+      <PageHead index={`Autonomy · v${data.current.version}`} title={<>Draw the <span className="hl">lines.</span></>}>
         <button className="btn" disabled={busy} onClick={async () => {
           setBusy(true)
           try { await api('/v1/policies', { method: 'PUT', body: c }); toast('New policy version published'); reload() } catch (e) { toast((e as Error).message, true) } finally { setBusy(false) }
@@ -182,7 +201,9 @@ export function Policies() {
       <section className="card stack">
         <div className="label">Qualification & pricing</div>
         <div className="grid-3">
-          <label className="field"><span>Minimum fit score</span><input className="input" type="number" min={0} max={100} value={c.qualification.minimumScore} onChange={(e) => setC({ ...c, qualification: { minimumScore: Math.min(100, num(e.target.value)) } })} /></label>
+          <label className="field"><span>Qualified at fit ≥</span><input className="input" type="number" min={0} max={100} value={c.qualification.minimumScore} onChange={(e) => setC({ ...c, qualification: { ...c.qualification, minimumScore: Math.min(100, num(e.target.value)) } })} /></label>
+          <label className="field"><span>…and evidence coverage ≥ (%)</span><input className="input" type="number" min={0} max={100} value={c.qualification.minimumEvidenceCoverage ?? 60} onChange={(e) => setC({ ...c, qualification: { ...c.qualification, minimumEvidenceCoverage: Math.min(100, num(e.target.value)) } })} /></label>
+          <label className="field"><span>Review threshold (fit)</span><input className="input" type="number" min={0} max={100} value={c.qualification.reviewScore ?? 50} onChange={(e) => setC({ ...c, qualification: { ...c.qualification, reviewScore: Math.min(100, num(e.target.value)) } })} /></label>
           <label className="field"><span>Currency</span><input className="input" maxLength={3} value={c.pricing.currency} onChange={(e) => setC({ ...c, pricing: { ...c.pricing, currency: e.target.value.toUpperCase() } })} /></label>
           <label className="field"><span>Max discount without approval (%)</span><input className="input" type="number" min={0} max={100} value={c.pricing.maximumDiscountPercent} onChange={(e) => setC({ ...c, pricing: { ...c.pricing, maximumDiscountPercent: Math.min(100, Number(e.target.value) || 0) } })} /></label>
           <label className="field"><span>Minimum deal value</span><input className="input" type="number" min={0} value={c.pricing.minimumDealValueMinor / 100} onChange={(e) => setC({ ...c, pricing: { ...c.pricing, minimumDealValueMinor: num(e.target.value) * 100 } })} /></label>
@@ -193,6 +214,14 @@ export function Policies() {
       <section className="card stack">
         <div className="label">AI budget</div>
         <label className="field" style={{ maxWidth: 280 }}><span>Max AI calls per day</span><input className="input" type="number" min={0} value={c.budgets.maxLlmCallsPerDay} onChange={(e) => setC({ ...c, budgets: { maxLlmCallsPerDay: num(e.target.value) } })} /><small>Runs stop (and are marked failed) when the budget is used up.</small></label>
+      </section>
+
+      <section className="card stack">
+        <div className="label">Data retention</div>
+        <div className="grid-2">
+          <label className="field"><span>Delete message bodies after (days)</span><input className="input" type="number" min={30} max={3650} value={c.retention?.messageDays ?? 365} onChange={(e) => setC({ ...c, retention: { ...(c.retention ?? { auditDays: 730 }), messageDays: Math.max(30, num(e.target.value)) } })} /></label>
+          <label className="field"><span>Delete audit events after (days)</span><input className="input" type="number" min={90} max={3650} value={c.retention?.auditDays ?? 730} onChange={(e) => setC({ ...c, retention: { ...(c.retention ?? { messageDays: 365 }), auditDays: Math.max(90, num(e.target.value)) } })} /></label>
+        </div>
       </section>
 
       <section className="stack">
@@ -217,7 +246,7 @@ export function Team() {
 
   return (
     <div className="stack lg fade-in" style={{ maxWidth: 900 }}>
-      <PageHead index="08 / Team" title={<>People with <span className="serif">keys.</span></>} />
+      <PageHead index="Team" title={<>People with <span className="hl">keys.</span></>} />
       {error ? <Empty title="Only owners and admins manage the team." /> : <>
         <form className="card row-flex" onSubmit={(e) => { e.preventDefault(); act(() => api('/v1/organization/members', { body: { email, role } }).then(() => setEmail('')), 'Invitation sent') }}>
           <input className="input" style={{ flex: 2, minWidth: 220 }} type="email" required placeholder="teammate@company.com" value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -250,7 +279,7 @@ export function Suppressions() {
   const act = async (fn: () => Promise<unknown>, ok: string) => { try { await fn(); toast(ok); reload() } catch (e) { toast((e as Error).message, true) } }
   return (
     <div className="stack lg fade-in" style={{ maxWidth: 900 }}>
-      <PageHead index="09 / Do-not-contact" title={<>Stop <span className="serif">means stop.</span></>} />
+      <PageHead index="Do-not-contact" title={<>Stop <span className="hl">means stop.</span></>} />
       <p className="muted" style={{ margin: 0, maxWidth: 640 }}>Addresses here are never emailed again, by agents or humans. Opt-outs are added automatically the moment someone asks.</p>
       <form className="card row-flex" onSubmit={(e) => { e.preventDefault(); act(() => api('/v1/suppressions', { body: { value } }).then(() => setValue('')), 'Suppressed') }}>
         <input className="input" style={{ flex: 1, minWidth: 220 }} type="email" required placeholder="someone@company.com" value={value} onChange={(e) => setValue(e.target.value)} />
@@ -274,7 +303,7 @@ export function Audit() {
   const { data, error } = useLoad(() => api<{ events: AuditEvent[] }>('/v1/audit-events?limit=100'), [org?.id])
   return (
     <div className="stack lg fade-in">
-      <PageHead index="10 / Audit log" title={<>Who did what, <span className="serif">and why.</span></>} />
+      <PageHead index="Audit log" title={<>Who did what, <span className="hl">and why.</span></>} />
       {error ? <Empty title="You don't have access to the audit log." /> : !data ? <Spinner /> : !data.events.length ? <Empty title="No events yet." /> : (
         <div className="table-wrap"><table className="table"><thead><tr><th>When</th><th>Action</th><th>Actor</th><th>Decision</th><th>Outcome</th><th>Policy</th><th>Details</th></tr></thead>
           <tbody>{data.events.map((e) => (
@@ -315,7 +344,7 @@ export function Usage() {
   )
   return (
     <div className="stack lg fade-in">
-      <PageHead index="11 / AI usage · 30 days" title={<>What the agents <span className="serif">cost.</span></>} />
+      <PageHead index="AI usage · 30 days" title={<>What the agents <span className="hl">cost.</span></>} />
       <div className="grid-3">
         <div className="card"><div className="label">Calls</div><div className="score" style={{ marginTop: 10 }}>{total.calls}</div></div>
         <div className="card"><div className="label">Tokens</div><div className="score" style={{ marginTop: 10 }}>{total.tokens.toLocaleString()}</div></div>

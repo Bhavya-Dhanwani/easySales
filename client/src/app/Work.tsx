@@ -13,7 +13,7 @@ export function Inbox() {
   const { data, loading } = useLoad(() => api<{ conversations: Conversation[] }>('/v1/conversations'), [org?.id])
   return (
     <div className="stack lg fade-in">
-      <PageHead index="03 / Inbox" title={<>Conversations, <span className="serif">in context.</span></>} />
+      <PageHead index="Inbox" title={<>Conversations, <span className="hl">in context.</span></>} />
       {loading ? <Spinner label="Loading" /> : !data?.conversations.length ? (
         <Empty title="No conversations yet.">A conversation opens when the outreach agent drafts the first email to a lead.</Empty>
       ) : (
@@ -79,21 +79,21 @@ function ApprovalCard({ a, onDone }: { a: Approval; onDone: () => void }) {
             </div>
           </div>
         ) : (
-          <div className="card tight" style={{ background: 'var(--paper)' }}>
+          <div className="card tight" style={{ background: 'var(--bg)' }}>
             <div className="small muted mono">To: {a.payload.to}</div>
             <div style={{ fontWeight: 600, margin: '6px 0 8px' }}>{subject}</div>
             <pre className="body">{body}</pre>
           </div>
         )
       ) : (
-        <div className="card tight" style={{ background: 'var(--paper)' }}>
+        <div className="card tight" style={{ background: 'var(--bg)' }}>
           <div className="row-flex between"><span className="small muted mono">To: {a.payload.to}</span><span className="mono">{money(a.payload.totalMinor ?? 0)} · {a.payload.discountPercent ?? 0}% off</span></div>
           <pre className="body" style={{ marginTop: 10, maxHeight: 280, overflow: 'auto' }}>{a.payload.body}</pre>
         </div>
       )}
       {!editing && (
         <div className="row-flex">
-          <button className="btn accent" disabled={busy} onClick={() => run(() => api(`/v1/approvals/${a._id}/approve`, { body: { payloadHash: hash } }), 'Approved, sending shortly')}>Approve & send</button>
+          <button className="btn lime" disabled={busy} onClick={() => run(() => api(`/v1/approvals/${a._id}/approve`, { body: { payloadHash: hash } }), 'Approved, sending shortly')}>Approve & send</button>
           {isMessage && <button className="btn ghost" disabled={busy} onClick={() => setEditing(true)}>Edit</button>}
           <button className="btn danger" disabled={busy} onClick={() => run(() => api(`/v1/approvals/${a._id}/reject`, { body: {} }), 'Rejected')}>Reject</button>
           <span className="small muted mono" title="The approval only authorizes this exact content">#{hash.slice(0, 8)}</span>
@@ -109,7 +109,7 @@ export function Approvals() {
   const { data, loading, reload } = useLoad(() => api<{ approvals: Approval[] }>(`/v1/approvals?status=${status}`), [org?.id, status])
   return (
     <div className="stack lg fade-in">
-      <PageHead index="04 / Approvals" title={<>Nothing leaves <span className="serif">without you.</span></>} />
+      <PageHead index="Approvals" title={<>Nothing leaves <span className="hl">without you.</span></>} />
       <div className="tabs">{['pending', 'approved', 'rejected', 'expired'].map((s) => <button key={s} className={status === s ? 'active' : ''} onClick={() => setStatus(s)}>{s}</button>)}</div>
       {loading ? <Spinner label="Loading" /> : !data?.approvals.length ? (
         <Empty title={status === 'pending' ? 'All clear.' : `No ${status} approvals.`}>{status === 'pending' ? 'When an agent wants to do something your policy reserves for humans, it waits here.' : ''}</Empty>
@@ -151,7 +151,7 @@ export function Runs() {
   const { data, loading, reload } = useLoad(() => api<{ workflows: Workflow[] }>('/v1/workflows?limit=50'), [org?.id], (d) => d.workflows.some((w) => ['queued', 'running'].includes(w.status)))
   return (
     <div className="stack lg fade-in">
-      <PageHead index="05 / Agent runs" title={<>Every step, <span className="serif">on the record.</span></>} />
+      <PageHead index="Agent runs" title={<>Every step, <span className="hl">on the record.</span></>} />
       {loading ? <Spinner label="Loading" /> : !data?.workflows.length ? <Empty title="No runs yet.">Open a lead and press Run agent.</Empty> : (
         <div className="table-wrap">
           <table className="table">

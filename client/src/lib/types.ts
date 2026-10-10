@@ -15,13 +15,48 @@ export const STAGES: Stage[] = ['new', 'qualified', 'discovery', 'proposal', 'ne
 
 export interface Evidence { claim: string; sourceUrl?: string; confidence?: number; verified: boolean }
 
+export type LeadStatus = 'new' | 'research_queued' | 'researching' | 'qualified' | 'needs_review' | 'disqualified' | 'research_failed'
+export const LEAD_STATUSES: LeadStatus[] = ['new', 'research_queued', 'researching', 'qualified', 'needs_review', 'disqualified', 'research_failed']
+
+export interface Criterion { criterionId: string; label: string; weight: number; result: 'match' | 'partial' | 'mismatch' | 'unknown'; explanation: string; evidenceUrls: string[] }
+
+export interface ImportJob {
+  _id: string
+  status: string
+  fileName?: string
+  totalRows: number
+  createdRows: number
+  duplicateRows: number
+  invalidRows: number
+  createdAt: string
+  completedAt?: string
+}
+
+export interface ResearchJob {
+  _id: string
+  type: string
+  entityId: string
+  status: string
+  currentStep: string
+  attempts: number
+  maxAttempts: number
+  failureCode?: string
+  lastError?: string
+  result?: { outcome?: string } | null
+  createdAt: string
+  updatedAt: string
+  usage: { calls: number; inputTokens: number; outputTokens: number } | null
+  lead?: { _id: string; company: { name: string }; status: LeadStatus } | null
+}
+
 export interface Lead {
   _id: string
-  company: { name: string; website?: string; domain?: string; industry?: string; size?: string; country?: string }
+  company: { name: string; website?: string; domain?: string; industry?: string; size?: string; employeeCount?: number; country?: string; description?: string }
   contact?: { name?: string; title?: string; email?: string; phone?: string }
   consent?: { basis: string; source?: string }
-  research?: { status: string; summary?: string; needs?: string[]; evidence?: Evidence[]; researchedAt?: string }
-  qualification?: { score?: number; rationale?: string; flags?: string[]; status: string }
+  status: LeadStatus
+  research?: { status: string; summary?: string; needs?: string[]; evidence?: Evidence[]; sources?: string[]; conflicts?: string[]; researchedAt?: string; profileVersion?: number }
+  qualification?: { score?: number; evidenceCoverage?: number; rationale?: string; flags?: string[]; criteria?: Criterion[]; evaluatedAt?: string; profileVersion?: number; overriddenBy?: string }
   outreachStatus: string
   opportunityStage: Stage
   requirements?: { needs?: string[]; budget?: string; timeline?: string }
@@ -125,6 +160,8 @@ export interface BusinessProfile {
   approvedClaims: string[]
   prohibitedClaims: string[]
   caseStudies: { title: string; summary: string }[]
+  scoringWeights?: Record<string, number>
+  version?: number
 }
 
 export interface PolicyConfig {
@@ -138,10 +175,11 @@ export interface PolicyConfig {
     minimumFollowUpIntervalHours: number
     quietHours: { enabled: boolean; start: string; end: string; timezone: string }
   }
-  qualification: { minimumScore: number }
+  qualification: { minimumScore: number; minimumEvidenceCoverage: number; reviewScore: number }
   pricing: { currency: string; minimumDealValueMinor: number; maximumDiscountPercent: number }
   proposals: { autoSend: boolean }
   budgets: { maxLlmCallsPerDay: number }
+  retention: { messageDays: number; auditDays: number }
 }
 
 export interface AuditEvent {

@@ -5,16 +5,18 @@ export function Badge({ status, children }: { status?: string | null; children?:
   return <span className={`badge ${tone(status)}`}>{children ?? human(status)}</span>
 }
 
-export function Logo({ dark = false }: { dark?: boolean }) {
+// the easySales mark: a rising trend line in a forest tile
+export function Logo({ dark = false, size = 30 }: { dark?: boolean; size?: number }) {
   return (
-    <span className="logo" style={{ display: 'inline-flex', alignItems: 'center', gap: 9 }}>
-      <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
-        <rect x="3" y="4" width="11" height="24" rx="5.5" fill={dark ? '#f2f1ed' : '#0d0d12'} />
-        <rect x="17" y="10" width="12" height="18" rx="6" fill="#2b3bff" />
-        <circle className="logo-eye" cx="21" cy="17" r="1.6" fill="#fff" />
-        <circle className="logo-eye" cx="25" cy="17" r="1.6" fill="#fff" />
+    <span className="logo" style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+      <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="9" fill={dark ? '#c8f169' : '#0f3d2e'} />
+        <path className="logo-trend" d="M8 21.5 13.5 16l3.5 3.5L24 12.5" fill="none" stroke={dark ? '#0f3d2e' : '#c8f169'} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M19 12h5.5v5.5" fill="none" stroke={dark ? '#0f3d2e' : '#c8f169'} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
-      <span style={{ fontWeight: 600, letterSpacing: '-0.04em', fontSize: 19 }}>easysales</span>
+      <span style={{ fontFamily: 'var(--display)', fontWeight: 700, letterSpacing: '-0.035em', fontSize: size * 0.68, color: dark ? '#fff' : 'var(--ink)' }}>
+        easy<span style={{ color: dark ? 'var(--lime)' : 'var(--forest-3)' }}>Sales</span>
+      </span>
     </span>
   )
 }
@@ -37,7 +39,7 @@ export function Stat({ label, value, hint }: { label: string; value: ReactNode; 
   return (
     <div className="card">
       <div className="label">{label}</div>
-      <div style={{ fontSize: 38, fontWeight: 500, letterSpacing: '-0.05em', lineHeight: 1.1, marginTop: 10 }}>{value}</div>
+      <div className="num" style={{ fontSize: 36, lineHeight: 1.1, marginTop: 8 }}>{value}</div>
       {hint && <div className="small muted" style={{ marginTop: 4 }}>{hint}</div>}
     </div>
   )
@@ -46,7 +48,7 @@ export function Stat({ label, value, hint }: { label: string; value: ReactNode; 
 export function PageHead({ index, title, children }: { index: string; title: ReactNode; children?: ReactNode }) {
   return (
     <header className="page-head">
-      <div className="label">{index}</div>
+      <span className="eyebrow" style={{ justifySelf: 'start' }}>{index}</span>
       <div className="row-flex between" style={{ alignItems: 'flex-end' }}>
         <h1 className="h1">{title}</h1>
         {children && <div className="row-flex">{children}</div>}

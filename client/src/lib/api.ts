@@ -70,5 +70,19 @@ export async function api<T = unknown>(path: string, opts: Options = {}, retried
   return json.data as T
 }
 
+// authorized file download (e.g. CSV reports): fetches with the session and saves via a blob URL
+export async function download(path: string, filename: string, retried = false): Promise<void> {
+  const orgId = getOrgId()
+  const res = await fetch(`/api${path}`, {
+    credentials: 'include',
+    headers: { ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}), ...(orgId ? { 'X-Organization-Id': orgId } : {}) },
+  })
+  if (res.status === 401 && !retried && (await refreshSession())) return download(path, filename, true)
+  if (!res.ok) throw new ApiError('Download failed', res.status)
+  const url = URL.createObjectURL(await res.blob())
+  Object.assign(document.createElement('a'), { href: url, download: filename }).click()
+  URL.revokeObjectURL(url)
+}
+
 // a fresh key per user intent; repeat submits of the same intent reuse it
 export const idempotencyKey = () => crypto.randomUUID()

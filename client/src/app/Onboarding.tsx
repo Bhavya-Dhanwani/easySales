@@ -16,15 +16,15 @@ export default function Onboarding() {
 
   const steps = [
     { done: Boolean(data.profile?.description && data.profile.services.length), title: 'Describe your business', copy: 'What you sell, at what price, in what voice, and which claims the agents may make.', to: '/app/business', cta: 'Open business brain' },
-    { done: Boolean(data.profile?.idealCustomerProfile?.industries?.length || data.profile?.idealCustomerProfile?.regions?.length), title: 'Define your ideal customer', copy: 'Industries, regions, signals and hard disqualifiers. The qualification agent scores against this.', to: '/app/business#icp', cta: 'Set ICP' },
+    { done: Boolean(data.profile?.idealCustomerProfile?.industries?.length || data.profile?.idealCustomerProfile?.regions?.length), title: 'Define your ideal customer', copy: 'Industries, regions, signals and hard disqualifiers. Leads are scored against this, with weights you control.', to: '/app/business#icp', cta: 'Set ICP' },
     { done: data.policyVersion > 1, title: 'Set the limits', copy: 'Approval mode or automatic sending, daily caps, follow-ups, quiet hours, discount limits and AI budget.', to: '/app/policies', cta: 'Review policy' },
-    { done: data.hasLeads, title: 'Bring your first leads', copy: 'Paste a CSV or add one by hand. Record the consent basis for each contact.', to: '/app/leads?add=1', cta: 'Add leads' },
+    { done: data.hasLeads, title: 'Bring your first leads', copy: 'Import a CSV (with column mapping) or add one by hand. Record the consent basis for each contact.', to: '/app/leads/import', cta: 'Import leads' },
   ]
   const next = steps.findIndex((s) => !s.done)
 
   return (
     <div className="stack lg fade-in" style={{ maxWidth: 860 }}>
-      <PageHead index="00 / Setup" title={<>Four steps to a <span className="serif">working pipeline.</span></>} />
+      <PageHead index="Setup" title={<>Four steps to a <span className="hl">working pipeline.</span></>} />
       <div className="onboard-steps">
         {steps.map((s, i) => (
           <div key={s.title} className={`onboard-step ${s.done ? 'done' : ''}`}>

@@ -14,11 +14,11 @@ interface LeadBundle {
   approvals: Approval[]
 }
 
-const PIPELINE_STEPS = ['research', 'qualify', 'draft_outreach', 'policy_check', 'awaiting_approval', 'done']
+const PIPELINE_STEPS = ['research', 'draft_outreach', 'policy_check', 'awaiting_approval', 'done']
 const REPLY_STEPS = ['classify_reply', 'policy_check', 'awaiting_approval', 'done']
 
 function Timeline({ wf }: { wf: Workflow }) {
-  const steps = wf.type === 'conversation.reply' ? REPLY_STEPS : wf.type === 'lead.pipeline' ? PIPELINE_STEPS : ['queued', 'done']
+  const steps = wf.type === 'conversation.reply' ? REPLY_STEPS : wf.type === 'lead.pipeline' ? PIPELINE_STEPS : wf.type === 'lead.research' ? ['research', 'done'] : ['queued', 'done']
   const at = wf.status === 'completed' ? steps.length - 1 : Math.max(0, steps.indexOf(wf.currentStep))
   return (
     <div className="steps">
@@ -81,7 +81,7 @@ export default function LeadDetail() {
   const { data, loading, reload } = useLoad(
     () => api<LeadBundle>(`/v1/leads/${id}`),
     [id],
-    (d) => d.workflows.some((w) => w.status === 'queued' || w.status === 'running') || d.proposals.some((p) => p.status === 'generating') || d.messages.some((m) => m.status === 'queued' || m.status === 'sending'),
+    (d) => ['research_queued', 'researching'].includes(d.lead.status) || d.workflows.some((w) => w.status === 'queued' || w.status === 'running') || d.proposals.some((p) => p.status === 'generating') || d.messages.some((m) => m.status === 'queued' || m.status === 'sending'),
   )
 
   if (loading) return <Spinner label="Loading lead" />
@@ -102,8 +102,11 @@ export default function LeadDetail() {
           onChange={(e) => act(() => api(`/v1/leads/${lead._id}`, { method: 'PATCH', body: { opportunityStage: e.target.value } }), 'Stage updated')}>
           {STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
-        <button className="btn accent" disabled={Boolean(active)} onClick={() => act(() => api(`/v1/leads/${lead._id}/run`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey() } }), 'Agents started')}>
-          {active ? <><span className="spinner" style={{ borderTopColor: '#fff' }} /> Running</> : latest ? 'Run again' : 'Run agent'}
+        <button className="btn ghost" disabled={Boolean(active)} onClick={() => act(() => api(`/v1/leads/${lead._id}/research`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey() } }), 'Research queued')}>
+          {lead.research?.status === 'done' ? 'Refresh research' : 'Research'}
+        </button>
+        <button className="btn lime" disabled={Boolean(active)} onClick={() => act(() => api(`/v1/leads/${lead._id}/run`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey() } }), 'Agents started')}>
+          {active ? <><span className="spinner" /> Working…</> : 'Run full agent'}
         </button>
       </PageHead>
 
@@ -117,45 +120,70 @@ export default function LeadDetail() {
       <div className="split">
         <div className="stack lg">
           <section className="card stack">
-            <div className="row-flex between"><span className="label">Research</span><Badge status={lead.research?.status} /></div>
-            {lead.research?.summary ? <>
-              <p style={{ margin: 0, fontSize: 16 }}>{lead.research.summary}</p>
-              {!!lead.research.needs?.length && <div><div className="label" style={{ marginBottom: 8 }}>Likely needs</div><div className="chips">{lead.research.needs.map((n) => <span className="tag" key={n} style={{ textTransform: 'none', fontFamily: 'var(--sans)', fontSize: 13 }}>{n}</span>)}</div></div>}
-              {!!lead.research.evidence?.length && (
-                <div className="stack sm">
-                  <div className="label">Evidence</div>
-                  {lead.research.evidence.map((e, i) => (
-                    <div key={i} className="row-flex between small" style={{ borderTop: '1px solid var(--line)', paddingTop: 8 }}>
-                      <span style={{ flex: 1, minWidth: 200 }}>{e.claim}</span>
-                      <span className="row-flex">
-                        {e.sourceUrl && <a className="mono small" href={e.sourceUrl} target="_blank" rel="noreferrer noopener">source ↗</a>}
-                        <Badge status={e.verified ? 'approved' : 'pending'}>{e.verified ? 'verified' : 'unverified'}</Badge>
-                      </span>
+            <div className="row-flex between">
+              <span className="h2">Qualification</span>
+              <span className="row-flex"><Badge status={lead.status} />{lead.qualification?.overriddenBy && <span className="badge plain">manual override</span>}</span>
+            </div>
+            {lead.qualification?.score !== undefined ? <>
+              <div className="grid-2">
+                <div>
+                  <div className="row-flex between"><span className="label">Fit score</span><span className="score">{lead.qualification.score}</span></div>
+                  <div className="meter"><i style={{ width: `${lead.qualification.score}%` }} /></div>
+                </div>
+                <div>
+                  <div className="row-flex between"><span className="label">Evidence coverage</span><span className="score" style={{ color: 'var(--forest-3)' }}>{lead.qualification.evidenceCoverage ?? 0}%</span></div>
+                  <div className="meter"><i style={{ width: `${lead.qualification.evidenceCoverage ?? 0}%` }} /></div>
+                </div>
+              </div>
+              <p style={{ margin: 0 }}>{lead.qualification.rationale}</p>
+              {!!lead.qualification.flags?.length && <div className="chips">{lead.qualification.flags.map((f) => <span key={f} className="badge warn plain">{f}</span>)}</div>}
+              {!!lead.qualification.criteria?.length && (
+                <div>
+                  <div className="crit label" style={{ borderTop: 0 }}><span>ICP criterion</span><span>Weight</span><span>Result</span><span className="exp">Why</span></div>
+                  {lead.qualification.criteria.map((c) => (
+                    <div key={c.criterionId} className="crit">
+                      <span style={{ fontWeight: 600 }}>{c.label}</span>
+                      <span className="mono">{c.weight}</span>
+                      <span><Badge status={c.result} /></span>
+                      <span className="exp small muted">{c.explanation}{c.evidenceUrls.filter((u) => u.startsWith('http')).map((u) => <a key={u} href={u} target="_blank" rel="noreferrer noopener" style={{ marginLeft: 6 }}>source ↗</a>)}{c.evidenceUrls.includes('lead-record') && <span className="badge plain" style={{ marginLeft: 6, height: 20 }}>your data</span>}</span>
                     </div>
                   ))}
                 </div>
               )}
-            </> : <p className="muted small" style={{ margin: 0 }}>Not researched yet. Press <b>Run agent</b> to research, qualify and draft outreach.</p>}
+              <div className="row-flex">
+                <button className="btn ghost sm" onClick={() => act(() => api(`/v1/leads/${lead._id}/qualify`, { method: 'POST' }), 'Re-scored with your current ICP')}>Re-qualify (no AI)</button>
+                {(['qualified', 'needs_review', 'disqualified'] as const).filter((s) => s !== lead.status).map((s) => (
+                  <button key={s} className="linkish" onClick={() => act(() => api(`/v1/leads/${lead._id}`, { method: 'PATCH', body: { status: s } }), `Marked ${human(s)}`)}>Mark {human(s)}</button>
+                ))}
+              </div>
+              <span className="small muted">Scored by code from the evidence below · profile v{lead.qualification.profileVersion ?? 1} · {ago(lead.qualification.evaluatedAt)}</span>
+            </> : <p className="muted small" style={{ margin: 0 }}>{lead.status === 'research_failed' ? 'Research failed. Check Research activity for the reason, then retry.' : 'Not scored yet. Research the lead to evaluate it against your ideal customer profile.'}</p>}
           </section>
 
           <section className="card stack">
-            <div className="row-flex between"><span className="label">Qualification</span><Badge status={lead.qualification?.status} /></div>
-            {lead.qualification?.score !== undefined ? (
-              <div className="row-flex" style={{ alignItems: 'flex-start', gap: 22 }}>
-                <div><div className="score">{lead.qualification.score}</div><div className="label">/ 100</div></div>
-                <div style={{ flex: 1, minWidth: 220 }}>
-                  <p style={{ margin: 0 }}>{lead.qualification.rationale}</p>
-                  {!!lead.qualification.flags?.length && <div className="chips" style={{ marginTop: 10 }}>{lead.qualification.flags.map((f) => <span key={f} className="badge warn plain">{f}</span>)}</div>}
+            <div className="row-flex between"><span className="h2">Research report</span>{lead.research?.researchedAt && <span className="small muted">{ago(lead.research.researchedAt)}</span>}</div>
+            {lead.research?.summary ? <>
+              <p style={{ margin: 0, fontSize: 16 }}>{lead.research.summary}</p>
+              {!!lead.research.sources?.length && <div className="chips">{lead.research.sources.map((u) => <a key={u} className="tag" href={u} target="_blank" rel="noreferrer noopener" style={{ textDecoration: 'none' }}>{new URL(u).pathname === '/' ? new URL(u).hostname : new URL(u).pathname} ↗</a>)}</div>}
+              <div className="grid-2">
+                <div className="stack sm">
+                  <span className="label">Verified findings</span>
+                  {(lead.research.evidence ?? []).filter((e) => e.verified).map((e, i) => <div key={i} className="small" style={{ borderTop: '1px solid var(--line)', paddingTop: 8 }}>✓ {e.claim}{e.sourceUrl && <a href={e.sourceUrl} target="_blank" rel="noreferrer noopener" style={{ marginLeft: 6 }}>↗</a>}</div>)}
+                  {!(lead.research.evidence ?? []).some((e) => e.verified) && <span className="small muted">None verified.</span>}
+                </div>
+                <div className="stack sm">
+                  <span className="label">Unverified / inferred</span>
+                  {(lead.research.evidence ?? []).filter((e) => !e.verified).map((e, i) => <div key={i} className="small muted" style={{ borderTop: '1px solid var(--line)', paddingTop: 8 }}>? {e.claim}</div>)}
+                  {!(lead.research.evidence ?? []).some((e) => !e.verified) && <span className="small muted">Nothing unverified.</span>}
                 </div>
               </div>
-            ) : <p className="muted small" style={{ margin: 0 }}>No score yet.</p>}
-            {lead.qualification?.status && lead.qualification.status !== 'qualified' && lead.qualification.status !== 'unreviewed' && (
-              <div><button className="btn ghost sm" onClick={() => act(() => api(`/v1/leads/${lead._id}`, { method: 'PATCH', body: { qualificationStatus: 'qualified' } }), 'Marked qualified')}>Override: mark qualified</button></div>
-            )}
+              {!!lead.research.needs?.length && <div><div className="label" style={{ marginBottom: 8 }}>Possible needs (hypotheses, not requests)</div><div className="chips">{lead.research.needs.map((n) => <span className="tag" key={n}>{n}</span>)}</div></div>}
+              {!!lead.research.conflicts?.length && <div className="chips">{lead.research.conflicts.map((c) => <span key={c} className="badge bad plain">Conflict: {c}</span>)}</div>}
+            </> : <p className="muted small" style={{ margin: 0 }}>No report yet.</p>}
           </section>
 
           <section className="stack">
-            <div className="row-flex between"><span className="label">Conversation</span>{conversation && <Badge status={conversation.status} />}</div>
+            <div className="row-flex between"><span className="h2">Conversation</span>{conversation && <Badge status={conversation.status} />}</div>
             {conversation?.summary && <div className="card tight small"><span className="label">AI summary · </span>{conversation.summary}</div>}
             {messages.length === 0 ? <Empty title="No messages yet.">The outreach agent drafts the first email after qualification.</Empty> : (
               <div className="thread">
@@ -189,7 +217,7 @@ export default function LeadDetail() {
           </section>
 
           <section className="stack">
-            <div className="row-flex between"><span className="label">Proposals</span><button className="btn ghost sm" onClick={() => setShowBuilder(!showBuilder)}>{showBuilder ? 'Close' : 'New proposal'}</button></div>
+            <div className="row-flex between"><span className="h2">Proposals</span><button className="btn ghost sm" onClick={() => setShowBuilder(!showBuilder)}>{showBuilder ? 'Close' : 'New proposal'}</button></div>
             {showBuilder && <div className="card"><ProposalBuilder leadId={lead._id} onCreated={() => { setShowBuilder(false); reload() }} /></div>}
             {proposals.length === 0 && !showBuilder && <p className="small muted" style={{ margin: 0 }}>No proposals yet. Prices come from your service catalogue; the agent writes the narrative.</p>}
             {proposals.map((p) => (
@@ -212,17 +240,27 @@ export default function LeadDetail() {
 
         <aside className="stack lg" style={{ position: 'sticky', top: 20 }}>
           <section className="card stack">
-            <div className="row-flex between"><span className="label">Agent run</span>{latest && <Link className="small" to="/app/runs">All runs</Link>}</div>
+            <div className="row-flex between"><span className="h2">Agent run</span>{latest && <Link className="small" to="/app/runs">All runs</Link>}</div>
             {latest ? <>
               <div className="row-flex between"><span className="mono small">{human(latest.type)}</span><Badge status={latest.status} /></div>
               <Timeline wf={latest} />
               {latest.result?.outcome && <div className="small">Outcome: <b>{human(latest.result.outcome)}</b></div>}
               {latest.lastError && <div className="small form-error">{latest.failureCode}: {latest.lastError}</div>}
+              {workflows.length > 1 && (
+                <div className="stack sm">
+                  <span className="label">History</span>
+                  {workflows.slice(1).map((w) => (
+                    <div key={w._id} className="row-flex between small" style={{ borderTop: '1px solid var(--line)', paddingTop: 6 }}>
+                      <span>{human(w.type)} · {ago(w.createdAt)}</span><Badge status={w.status} />
+                    </div>
+                  ))}
+                </div>
+              )}
             </> : <p className="small muted" style={{ margin: 0 }}>No runs yet.</p>}
           </section>
 
           <section className="card stack">
-            <span className="label">Contact</span>
+            <span className="h2">Contact</span>
             <dl className="kv">
               <dt>Name</dt><dd>{lead.contact?.name ?? '—'}</dd>
               <dt>Title</dt><dd>{lead.contact?.title ?? '—'}</dd>
@@ -237,7 +275,7 @@ export default function LeadDetail() {
 
           {(lead.requirements?.needs?.length || lead.requirements?.budget || lead.requirements?.timeline) ? (
             <section className="card stack">
-              <span className="label">Captured requirements</span>
+              <span className="h2">Captured requirements</span>
               <dl className="kv">
                 <dt>Needs</dt><dd>{lead.requirements?.needs?.join(', ') || '—'}</dd>
                 <dt>Budget</dt><dd>{lead.requirements?.budget || '—'}</dd>

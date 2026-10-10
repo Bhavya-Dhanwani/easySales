@@ -8,7 +8,8 @@ import './app.css'
 const NAV: { group: string; items: { to: string; label: string; end?: boolean }[] }[] = [
   { group: 'Pipeline', items: [
     { to: '/app', label: 'Overview', end: true },
-    { to: '/app/leads', label: 'Leads' },
+    { to: '/app/leads', label: 'Lead pipeline' },
+    { to: '/app/research', label: 'Research activity' },
     { to: '/app/inbox', label: 'Inbox' },
     { to: '/app/approvals', label: 'Approvals' },
     { to: '/app/runs', label: 'Agent runs' },
@@ -56,7 +57,7 @@ export default function AppLayout() {
       </div>
       {open && <div className="scrim" onClick={() => setOpen(false)} />}
       <aside className={`side ${open ? 'open' : ''}`}>
-        <NavLink to="/" aria-label="Home"><Logo /></NavLink>
+        <NavLink to="/" aria-label="Home" style={{ padding: '0 6px' }}><Logo dark /></NavLink>
         {NAV.map((g) => (
           <nav className="side-group" key={g.group} aria-label={g.group}>
             <div className="label">{g.group}</div>
@@ -77,8 +78,8 @@ export default function AppLayout() {
           <div className="who">
             <span className="avatar">{user.name?.[0]?.toUpperCase()}</span>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div className="small" style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{org?.name}</div>
-              <div className="label" style={{ fontSize: 10 }}>{org?.role?.replace('_', ' ')}</div>
+              <div className="small" style={{ fontWeight: 600, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{org?.name}</div>
+              <div className="small" style={{ color: '#a9bfb3' }}>{org?.role?.replace('_', ' ')}</div>
             </div>
             <button className="linkish" onClick={async () => { await logout(); nav('/') }}>Log out</button>
           </div>
