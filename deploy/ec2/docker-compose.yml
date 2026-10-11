@@ -1,0 +1,57 @@
+# Single-server production stack for one EC2 instance:
+# Caddy (HTTPS with automatic certificates) -> API (+ app) and a separate agent worker -> MongoDB.
+# Only Caddy is reachable from outside; MongoDB and the API stay on the internal network.
+# Secrets live in server/.env on the instance (created by setup.sh), never in the image.
+services:
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in deploy/ec2/.env}
+      PREVIEW_DOMAIN: ${PREVIEW_DOMAIN:?set PREVIEW_DOMAIN in deploy/ec2/.env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ADMIN_EMAILS in server/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [api]
+    restart: unless-stopped
+
+  api:
+    build: ../..
+    image: easysales:latest
+    # migrations run before every start; a failed migration keeps the old data untouched
+    command: ["sh", "-c", "node dist/migrate.js && node dist/server.js"]
+    env_file: ../../server/.env
+    environment:
+      MONGO_URI: mongodb://mongodb:27017/easysales
+      RUN_WORKER: "false"
+    depends_on: [mongodb]
+    restart: unless-stopped
+
+  # the agents: research, outreach, follow-ups, inbox reading, lead finder, prototypes. Runs with the site closed.
+  worker:
+    image: easysales:latest
+    command: ["node", "dist/worker.js"]
+    env_file: ../../server/.env
+    environment:
+      MONGO_URI: mongodb://mongodb:27017/easysales
+    depends_on: [api]
+    restart: unless-stopped
+
+  mongodb:
+    image: mongo:7
+    # small cache: the whole stack fits a t3.small (2 GB) with swap
+    command: ["mongod", "--quiet", "--wiredTigerCacheSizeGB", "0.25"]
+    volumes:
+      - mongodb_data:/data/db
+      - ./backups:/backups
+    restart: unless-stopped
+
+volumes:
+  mongodb_data:
+  caddy_data:
+  caddy_config:

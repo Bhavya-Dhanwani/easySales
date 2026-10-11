@@ -9,6 +9,8 @@ import { setSmtpVerifier } from "../modules/private/integrations/integrations.ro
 import { setIntegrationHttp } from "../shared/integrations/core.js";
 import { setImapClient } from "../shared/conversations/imap.service.js";
 import { contactEmailFrom } from "../agents/research.agent.js";
+import { runLeadFinder } from "../shared/discovery/leadFinder.service.js";
+import ImportJob from "../shared/models/importJob.model.js";
 import env from "../shared/config/env.config.js";
 import Lead from "../shared/models/lead.model.js";
 import Message from "../shared/models/message.model.js";
@@ -141,6 +143,37 @@ test("lead discovery: Tavily web search adds businesses not on the map; director
     assert.equal(r2.body.data.candidates.length, 1);
     assert.match(r2.body.data.failed[0].error, /monthly free searches used up/);
     Object.assign(env, { TAVILY_API_KEY: "" });
+});
+
+test("daily lead finder: searches the niche by itself once a day, imports with the owner's contact basis, queues research", async () => {
+    const calls: string[] = [];
+    fakeOsm(calls);
+    const owner = await createAccount("AutoFinder");
+    await request(app).post("/api/v1/leads").set(owner.auth).send({ companyName: "Bright Smiles", website: "brightsmiles.test" });
+    // turned on but no contact basis chosen: never runs
+    await BusinessProfile.updateOne({ organizationId: owner.organizationId }, { $set: {
+        "idealCustomerProfile.searchTerms": ["Dentist"], "idealCustomerProfile.searchAreas": ["Pune"], "idealCustomerProfile.disqualifiers": ["Pearl"],
+        "leadFinder.enabled": true, "leadFinder.dailyLeads": 1,
+    } }, { upsert: true });
+    await runLeadFinder();
+    assert.equal(calls.length, 0);
+
+    await BusinessProfile.updateOne({ organizationId: owner.organizationId }, { $set: { "leadFinder.consentBasis": "legitimate_interest" } });
+    await runLeadFinder();
+    assert.deepEqual(calls, ["Dentist in Pune"], "searched its own niche");
+    // the map returns Smile Dental and Tooth Care as new; dailyLeads caps the import at 1, websites first
+    const leads = await Lead.find({ organizationId: owner.organizationId, "source.provider": "discovery" }).lean();
+    assert.deepEqual(leads.map((l) => [l.company.name, l.consent?.basis, l.status]), [["Smile Dental", "legitimate_interest", "research_queued"]]);
+    assert.match(String(leads[0].consent?.source), /^Lead finder \(OpenStreetMap search: Dentist in Pune\)/);
+    assert.equal(await Workflow.countDocuments({ organizationId: owner.organizationId, type: "lead.research" }), 1);
+    assert.match(String((await ImportJob.findOne({ organizationId: owner.organizationId }).lean())?.fileName), /^Lead finder \d{4}-\d{2}-\d{2}: Dentist in Pune/);
+    const profile = await BusinessProfile.findOne({ organizationId: owner.organizationId }).lean();
+    assert.equal(profile?.leadFinder?.lastResult, "Added 1 leads from Dentist in Pune; research queued");
+    assert.ok(await AuditEvent.exists({ organizationId: owner.organizationId, action: "lead.discover", actorType: "agent", actorId: "lead_finder" }));
+
+    // once a day: running again the same day searches nothing
+    await runLeadFinder();
+    assert.equal(calls.length, 1);
 });
 
 test("research finds a public contact email on the prospect's own site", () => {

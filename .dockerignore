@@ -10,3 +10,4 @@
 .dockerignore
 Dockerfile
 docker-compose.yml
+deploy

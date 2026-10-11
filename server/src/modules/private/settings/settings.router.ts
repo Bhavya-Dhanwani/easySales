@@ -33,6 +33,12 @@ const BusinessProfileSchema = z.object({
         industries: tags, companySizes: tags, regions: tags, requiredSignals: tags, disqualifiers: tags,
         searchTerms: z.array(text(100)).max(30).optional(), searchAreas: z.array(text(100)).max(30).optional(),
     }),
+    // turning it on means choosing, once, why the business may contact the companies it finds
+    leadFinder: z.object({
+        enabled: z.boolean(),
+        consentBasis: z.enum(["legitimate_interest", "opt_in", "existing_customer"]).optional(),
+        dailyLeads: z.number().int().min(1).max(50).default(20),
+    }).refine((f) => !f.enabled || f.consentBasis, "Choose why you may contact the businesses the lead finder adds").optional(),
     brandVoice: text(500),
     approvedClaims: tags,
     prohibitedClaims: tags,
@@ -58,6 +64,11 @@ router.get("/business-profile", authorize("profile.read"), async (req: Request, 
     @route PUT /api/v1/business-profile
     @desc Replace the structured business knowledge the agents use
 */
+// lead finder settings are merged field by field, so saving the profile keeps its run history
+const withLeadFinder = ({ leadFinder, ...rest }: Record<string, unknown>) => ({
+    ...rest, ...Object.fromEntries(Object.entries((leadFinder ?? {}) as Record<string, unknown>).map(([k, v]) => [`leadFinder.${k}`, v])),
+});
+
 router.put("/business-profile", authorize("profile.write"), validate(BusinessProfileSchema), async (req: Request, res: Response) => {
     const ctx = ctxOf(req);
     const names = (req.body.services as { name: string }[]).map((s) => s.name.toLowerCase());
@@ -67,7 +78,7 @@ router.put("/business-profile", authorize("profile.write"), validate(BusinessPro
     const profile = await BusinessProfile.findOneAndUpdate(
         { organizationId: ctx.organizationId },
         // a new profile version: research and qualification record which version they used
-        { $set: req.body, $inc: { version: 1 } },
+        { $set: withLeadFinder(req.body), $inc: { version: 1 } },
         { new: true, upsert: true, runValidators: true },
     ).lean();
     await audit({ organizationId: ctx.organizationId, actorType: "user", actorId: ctx.userId, action: "business_profile.update", outcome: "success" });

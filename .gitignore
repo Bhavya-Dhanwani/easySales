@@ -30,3 +30,5 @@ coverage
 Thumbs.db
 .vscode
 .idea
+deploy/ec2/.env
+deploy/ec2/backups/

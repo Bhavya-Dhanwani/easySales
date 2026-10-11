@@ -36,6 +36,15 @@ const businessProfileSchema = new mongoose.Schema({
         searchAreas: [String],
     },
 
+    // daily lead finder: searches the niche on its own and imports new businesses with this contact basis
+    leadFinder: {
+        enabled: { type: Boolean, default: false },
+        consentBasis: { type: String, enum: ["legitimate_interest", "opt_in", "existing_customer"] },
+        dailyLeads: { type: Number, default: 20, min: 1, max: 50 },
+        lastRunAt: Date,
+        lastResult: String,
+    },
+
     // shared with prospects who ask for a meeting (Calendly, Cal.com, Google booking page...)
     meetingLink: { type: String, default: "" },
 

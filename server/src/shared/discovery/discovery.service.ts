@@ -117,7 +117,9 @@ export async function nicheOf(organizationId: Id) {
     Lead search is locked to the niche the owner configured: a search term and an area from
     the business profile, nothing else. Enforced here in code, whatever the client or an agent asks.
 */
-async function inNiche(organizationId: Id, userId: string, queries: Query[]) {
+type Actor = { type: "user" | "agent"; id: string };
+
+async function inNiche(organizationId: Id, actor: Actor, queries: Query[]) {
     const niche = await nicheOf(organizationId);
     if (!niche.searchTerms.length || !niche.searchAreas.length) {
         throw new ApiError(400, "Add search terms and search areas to your ideal customer (Settings → Business) first: lead search only runs inside your niche.");
@@ -128,7 +130,7 @@ async function inNiche(organizationId: Id, userId: string, queries: Query[]) {
             const what = niche.searchTerms.find((t) => same(t, q.what));
             const where = niche.searchAreas.find((a) => same(a, q.where));
             if (what && where) return { what, where };
-            await audit({ organizationId, actorType: "user", actorId: userId, action: "lead.discover", outcome: "denied", metadata: { what: q.what, where: q.where, reason: "outside niche" } });
+            await audit({ organizationId, actorType: actor.type, actorId: actor.id, action: "lead.discover", outcome: "denied", metadata: { what: q.what, where: q.where, reason: "outside niche" } });
             throw new ApiError(403, `"${what ? q.where : q.what}" is outside your niche. Allowed ${what ? `areas: ${niche.searchAreas.join(", ")}` : `search terms: ${niche.searchTerms.join(", ")}`}.`);
         })),
     };
@@ -154,8 +156,8 @@ export async function nextNicheQueries(organizationId: Id, max: number) {
     (30 a day stays under Tavily's 1,000 a month). Businesses matching a
     disqualifier are dropped. Nothing is saved here: the user picks candidates and imports them.
 */
-export async function discoverLeads(organizationId: Id, userId: string, q: { queries: Query[]; limit: number }) {
-    const { niche, queries } = await inNiche(organizationId, userId, q.queries);
+export async function discoverLeads(organizationId: Id, actor: Actor, q: { queries: Query[]; limit: number }) {
+    const { niche, queries } = await inNiche(organizationId, actor, q.queries);
 
     const today = await UsageRecord.countDocuments({ organizationId, kind: "discovery", createdAt: { $gte: startOfUtcDay() } });
     if (today + queries.length > env.DISCOVERY_SEARCHES_PER_DAY) throw new ApiError(429, `Daily lead search limit (${env.DISCOVERY_SEARCHES_PER_DAY}) reached; try again tomorrow.`);
@@ -184,6 +186,6 @@ export async function discoverLeads(organizationId: Id, userId: string, q: { que
     for (const c of candidates) c.alreadyLead = Boolean((c.domain && known.has(c.domain)) || (c.email && known.has(c.email)) || known.has(`name:${nameKey(c.name)}`));
 
     const disqualified = found.length - kept.length;
-    await audit({ organizationId, actorType: "user", actorId: userId, action: "lead.discover", outcome: "success", metadata: { queries, failed, found: candidates.length, disqualified } });
+    await audit({ organizationId, actorType: actor.type, actorId: actor.id, action: "lead.discover", outcome: "success", metadata: { queries, failed, found: candidates.length, disqualified } });
     return { candidates, queries, failed, disqualified, webSearch: webSearchEnabled() };
 }

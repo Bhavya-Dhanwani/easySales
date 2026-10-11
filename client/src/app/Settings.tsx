@@ -1,3 +1,4 @@
+import { CONSENT } from './Leads'
 import { useEffect, useState, type KeyboardEvent } from 'react'
 import { api } from '../lib/api'
 import { ago, human, money } from '../lib/format'
@@ -65,6 +66,7 @@ export function Business() {
         businessName: p!.businessName, businessType: p!.businessType, description: p!.description, website: p!.website, meetingLink: p!.meetingLink || '',
         services: p!.services.map((s) => ({ name: s.name, description: s.description ?? '', basePriceMinor: Math.round(s.basePriceMinor), ...(s.deliveryDaysMin ? { deliveryDaysMin: s.deliveryDaysMin } : {}), ...(s.deliveryDaysMax ? { deliveryDaysMax: s.deliveryDaysMax } : {}) })),
         idealCustomerProfile: p!.idealCustomerProfile, brandVoice: p!.brandVoice,
+        leadFinder: p!.leadFinder ? { enabled: p!.leadFinder.enabled, consentBasis: p!.leadFinder.consentBasis || undefined, dailyLeads: p!.leadFinder.dailyLeads } : undefined,
         approvedClaims: p!.approvedClaims, prohibitedClaims: p!.prohibitedClaims,
         caseStudies: p!.caseStudies.filter((c) => c.title || c.summary),
         terms: p!.terms ?? '', revisionRounds: p!.revisionRounds ?? 2,
@@ -139,6 +141,24 @@ export function Business() {
           <label className="field"><span>Lead search terms</span><Chips value={p.idealCustomerProfile.searchTerms ?? []} onChange={(v) => icp('searchTerms', v)} placeholder="dentist, dental clinic… (Enter)" /><small>Lead search only looks for these.</small></label>
           <label className="field"><span>Lead search areas</span><Chips value={p.idealCustomerProfile.searchAreas ?? []} onChange={(v) => icp('searchAreas', v)} placeholder="Pune, Mumbai…" /><small>…and only in these places.</small></label>
         </div>
+      </section>
+
+      <section id="lead-finder" className="card stack">
+        <div className="label">Daily lead finder</div>
+        <label className="check"><input type="checkbox" checked={Boolean(p.leadFinder?.enabled)} onChange={(e) => setP({ ...p, leadFinder: { dailyLeads: 20, ...p.leadFinder, enabled: e.target.checked } })} /> Find new leads in my niche every day, add them and research them</label>
+        {p.leadFinder?.enabled && (
+          <div className="grid-2">
+            <label className="field"><span>Why may you contact them? *</span>
+              <select className="select" required value={p.leadFinder.consentBasis ?? ''} onChange={(e) => setP({ ...p, leadFinder: { ...p.leadFinder!, consentBasis: e.target.value } })}>
+                <option value="" disabled>Choose a basis</option>
+                {CONSENT.filter(([v]) => v !== 'none').map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+              <small>Applied to every business it adds. Contact them only where the law allows it; every email carries an opt-out.</small>
+            </label>
+            <label className="field"><span>New leads per day</span><input className="input" type="number" min={1} max={50} value={p.leadFinder.dailyLeads} onChange={(e) => setP({ ...p, leadFinder: { ...p.leadFinder!, dailyLeads: Math.min(50, Math.max(1, Number(e.target.value) || 1)) } })} /></label>
+          </div>
+        )}
+        <small className="muted">Runs once a day on the server, inside your search terms and areas. Researched leads that qualify go into your active campaign. {p.leadFinder?.lastResult ? `Last run: ${p.leadFinder.lastResult}.` : ''}</small>
       </section>
 
       <section className="card stack">

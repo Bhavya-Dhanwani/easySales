@@ -1,0 +1,22 @@
+# Caddy gets and renews the HTTPS certificates by itself: Let's Encrypt first, ZeroSSL as the
+# fallback (it needs the contact email), e.g. when the shared sslip.io allowance is used up.
+{
+	email {$ACME_EMAIL}
+}
+
+# the app and its API
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy api:5000
+}
+
+# prototype previews on their own origin: only the preview route is served here
+{$PREVIEW_DOMAIN} {
+	@preview path /api/preview/*
+	handle @preview {
+		reverse_proxy api:5000
+	}
+	handle {
+		respond "Not found" 404
+	}
+}

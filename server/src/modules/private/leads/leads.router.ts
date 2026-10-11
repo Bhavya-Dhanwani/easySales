@@ -150,8 +150,87 @@ router.post("/discover", authorize("leads.write"), validate(z.object({
 }).strict().refine((b) => b.auto || (b.what && b.where), "Give a search term and an area, or use auto")), async (req: Request, res: Response) => {
     const ctx = ctxOf(req);
     const queries = req.body.auto ? await nextNicheQueries(ctx.organizationId, 3) : [{ what: req.body.what, where: req.body.where }];
-    return Ok(res, "Lead search finished", await discoverLeads(ctx.organizationId, ctx.userId, { queries, limit: req.body.limit }));
+    return Ok(res, "Lead search finished", await discoverLeads(ctx.organizationId, { type: "user", id: ctx.userId }, { queries, limit: req.body.limit }));
 });
+
+/*
+    Imports mapped rows as a tracked ImportJob: validation, in-file and existing duplicates, a unique
+    index as the final arbiter under concurrency, row-level error report, optional research.
+    Used by CSV upload, Find leads and the daily lead finder (userId null = the agent).
+*/
+export async function importRows(organizationId: mongoose.Types.ObjectId, userId: string | null, rows: unknown[], opts: { idempotencyKey: string; fileName?: string; source: "csv" | "discovery"; research: boolean }) {
+    const job = await ImportJob.create({ organizationId, idempotencyKey: opts.idempotencyKey, fileName: opts.fileName, totalRows: rows.length, createdBy: userId ?? undefined });
+    const rowErrors: { row: number; kind: "invalid" | "duplicate"; message: string; company?: string; email?: string }[] = [];
+    const seen = new Set<string>();
+    const docs: (ReturnType<typeof toLeadDoc> & { row: number })[] = [];
+
+    rows.forEach((raw, i) => {
+        const parsed = LeadInputSchema.safeParse(raw);
+        const r = (raw ?? {}) as Record<string, unknown>;
+        if (!parsed.success) {
+            const issue = parsed.error.issues[0];
+            rowErrors.push({ row: i + 1, kind: "invalid", message: `${issue.path.join(".")}: ${issue.message}`, company: String(r.companyName ?? "").slice(0, 200), email: String(r.contactEmail ?? "").slice(0, 200) });
+            return;
+        }
+        const doc = toLeadDoc(parsed.data, opts.source);
+        if (seen.has(doc.dedupeKey)) {
+            rowErrors.push({ row: i + 1, kind: "duplicate", message: "Duplicate within file", company: doc.company.name, email: doc.contact.email });
+            return;
+        }
+        seen.add(doc.dedupeKey);
+        docs.push({ ...doc, row: i + 1 });
+    });
+
+    const existingKeys = new Set((await Lead.find({ organizationId: organizationId, dedupeKey: { $in: [...seen] } }, { dedupeKey: 1 }).lean()).map((l) => l.dedupeKey));
+    const fresh = docs.filter((d) => {
+        if (!existingKeys.has(d.dedupeKey)) return true;
+        rowErrors.push({ row: d.row, kind: "duplicate", message: "Already in your leads", company: d.company.name, email: d.contact.email });
+        return false;
+    });
+
+    // the unique index is the final arbiter under concurrency: a lost race is a duplicate, not an error
+    let created = 0;
+    let createdIds: mongoose.Types.ObjectId[] = [];
+    if (fresh.length) {
+        try {
+            const result = await Lead.insertMany(
+                fresh.map(({ row: _row, ...d }) => ({ organizationId: organizationId, ...d, source: { ...d.source, importId: job._id }, ownerId: userId ?? undefined })),
+                { ordered: false },
+            );
+            created = result.length;
+            createdIds = result.map((l) => l._id);
+        } catch (error) {
+            const e = error as { code?: number; insertedDocs?: unknown[]; writeErrors?: { index?: number; err?: { index?: number } }[] };
+            if (!e.writeErrors && e.code !== 11000) throw error;
+            created = e.insertedDocs?.length ?? 0;
+            createdIds = ((e.insertedDocs ?? []) as { _id: mongoose.Types.ObjectId }[]).map((l) => l._id);
+            for (const w of e.writeErrors ?? []) {
+                const d = fresh[w.index ?? w.err?.index ?? -1];
+                if (d) rowErrors.push({ row: d.row, kind: "duplicate", message: "Already in your leads", company: d.company.name, email: d.contact.email });
+            }
+        }
+    }
+
+    if (created) await recordDiscoveredImport(organizationId, job._id);
+    if (opts.research) {
+        for (const leadId of createdIds) {
+            await startWorkflow({
+                organizationId: organizationId, type: "lead.research", entityType: "lead", entityId: leadId,
+                idempotencyKey: `research:${leadId}:import`, startedBy: userId ?? undefined, actor: userId ? { type: "user", id: userId } : { type: "system", id: "lead_finder" },
+            });
+        }
+        if (createdIds.length) await Lead.updateMany({ organizationId: organizationId, _id: { $in: createdIds } }, { status: "research_queued" });
+    }
+    rowErrors.sort((a, b) => a.row - b.row);
+    const invalidRows = rowErrors.filter((e) => e.kind === "invalid").length;
+    const duplicateRows = rowErrors.length - invalidRows;
+    const done = await ImportJob.findOneAndUpdate({ organizationId: organizationId, _id: job._id }, {
+        status: invalidRows ? "completed_with_errors" : "completed", createdRows: created, invalidRows, duplicateRows,
+        rowErrors, completedAt: new Date(),
+    }, { new: true, projection: { rowErrors: 0 } }).lean();
+    await audit({ organizationId: organizationId, actorType: userId ? "user" : "agent", actorId: userId ?? "lead_finder", action: "lead.import", targetType: "import", targetId: job._id.toString(), outcome: "success", metadata: { created, duplicateRows, invalidRows } });
+    return done;
+}
 
 /*
     @route POST /api/v1/leads/import
@@ -170,78 +249,8 @@ router.post("/import", authorize("leads.write"), validate(z.object({
     const existing = await ImportJob.findOne({ organizationId: ctx.organizationId, idempotencyKey }, { rowErrors: 0 }).lean();
     if (existing) return Ok(res, "Import already processed", { job: existing });
 
-    const rows = req.body.rows as unknown[];
-    const job = await ImportJob.create({ organizationId: ctx.organizationId, idempotencyKey, fileName: req.body.fileName, totalRows: rows.length, createdBy: ctx.userId });
-    const rowErrors: { row: number; kind: "invalid" | "duplicate"; message: string; company?: string; email?: string }[] = [];
-    const seen = new Set<string>();
-    const docs: (ReturnType<typeof toLeadDoc> & { row: number })[] = [];
-
-    rows.forEach((raw, i) => {
-        const parsed = LeadInputSchema.safeParse(raw);
-        const r = (raw ?? {}) as Record<string, unknown>;
-        if (!parsed.success) {
-            const issue = parsed.error.issues[0];
-            rowErrors.push({ row: i + 1, kind: "invalid", message: `${issue.path.join(".")}: ${issue.message}`, company: String(r.companyName ?? "").slice(0, 200), email: String(r.contactEmail ?? "").slice(0, 200) });
-            return;
-        }
-        const doc = toLeadDoc(parsed.data, req.body.source);
-        if (seen.has(doc.dedupeKey)) {
-            rowErrors.push({ row: i + 1, kind: "duplicate", message: "Duplicate within file", company: doc.company.name, email: doc.contact.email });
-            return;
-        }
-        seen.add(doc.dedupeKey);
-        docs.push({ ...doc, row: i + 1 });
-    });
-
-    const existingKeys = new Set((await Lead.find({ organizationId: ctx.organizationId, dedupeKey: { $in: [...seen] } }, { dedupeKey: 1 }).lean()).map((l) => l.dedupeKey));
-    const fresh = docs.filter((d) => {
-        if (!existingKeys.has(d.dedupeKey)) return true;
-        rowErrors.push({ row: d.row, kind: "duplicate", message: "Already in your leads", company: d.company.name, email: d.contact.email });
-        return false;
-    });
-
-    // the unique index is the final arbiter under concurrency: a lost race is a duplicate, not an error
-    let created = 0;
-    let createdIds: mongoose.Types.ObjectId[] = [];
-    if (fresh.length) {
-        try {
-            const result = await Lead.insertMany(
-                fresh.map(({ row: _row, ...d }) => ({ organizationId: ctx.organizationId, ...d, source: { ...d.source, importId: job._id }, ownerId: ctx.userId })),
-                { ordered: false },
-            );
-            created = result.length;
-            createdIds = result.map((l) => l._id);
-        } catch (error) {
-            const e = error as { code?: number; insertedDocs?: unknown[]; writeErrors?: { index?: number; err?: { index?: number } }[] };
-            if (!e.writeErrors && e.code !== 11000) throw error;
-            created = e.insertedDocs?.length ?? 0;
-            createdIds = ((e.insertedDocs ?? []) as { _id: mongoose.Types.ObjectId }[]).map((l) => l._id);
-            for (const w of e.writeErrors ?? []) {
-                const d = fresh[w.index ?? w.err?.index ?? -1];
-                if (d) rowErrors.push({ row: d.row, kind: "duplicate", message: "Already in your leads", company: d.company.name, email: d.contact.email });
-            }
-        }
-    }
-
-    if (created) await recordDiscoveredImport(ctx.organizationId, job._id);
-    if (req.body.research) {
-        for (const leadId of createdIds) {
-            await startWorkflow({
-                organizationId: ctx.organizationId, type: "lead.research", entityType: "lead", entityId: leadId,
-                idempotencyKey: `research:${leadId}:import`, startedBy: ctx.userId, actor: { type: "user", id: ctx.userId },
-            });
-        }
-        if (createdIds.length) await Lead.updateMany({ organizationId: ctx.organizationId, _id: { $in: createdIds } }, { status: "research_queued" });
-    }
-    rowErrors.sort((a, b) => a.row - b.row);
-    const invalidRows = rowErrors.filter((e) => e.kind === "invalid").length;
-    const duplicateRows = rowErrors.length - invalidRows;
-    const done = await ImportJob.findOneAndUpdate({ organizationId: ctx.organizationId, _id: job._id }, {
-        status: invalidRows ? "completed_with_errors" : "completed", createdRows: created, invalidRows, duplicateRows,
-        rowErrors, completedAt: new Date(),
-    }, { new: true, projection: { rowErrors: 0 } }).lean();
-    await audit({ organizationId: ctx.organizationId, actorType: "user", actorId: ctx.userId, action: "lead.import", targetType: "import", targetId: job._id.toString(), outcome: "success", metadata: { created, duplicateRows, invalidRows } });
-    return Created(res, "Import finished", { job: done });
+    const job = await importRows(ctx.organizationId, ctx.userId, req.body.rows, { idempotencyKey, fileName: req.body.fileName, source: req.body.source, research: req.body.research });
+    return Created(res, "Import finished", { job });
 });
 
 /*
