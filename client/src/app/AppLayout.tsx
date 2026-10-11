@@ -20,6 +20,7 @@ const NAV: { group: string; items: { to: string; label: string; end?: boolean }[
   { group: 'Configure', items: [
     { to: '/app/business', label: 'Business brain' },
     { to: '/app/policies', label: 'Autonomy & limits' },
+    { to: '/app/integrations', label: 'Integrations' },
     { to: '/app/email', label: 'Email account' },
     { to: '/app/team', label: 'Team' },
     { to: '/app/billing', label: 'Plan & billing' },

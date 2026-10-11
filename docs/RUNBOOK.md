@@ -48,6 +48,15 @@ Alerts go to the logs, the tenant's audit log (tenant alerts) and `ALERT_WEBHOOK
 4. **Recover:** retry dead letters, reconcile uncertain sends, re-enable flags gradually.
 5. **Review** within 2 working days: timeline, cause, what will prevent it. Cross-tenant access, unauthorized outreach or a preview escaping its sandbox are **sev-1** and block releases until fixed and covered by a test.
 
+## Integrations pilot
+
+1. Create a HubSpot **developer test account** and a Google Cloud OAuth client in testing mode. Set the env vars from DEPLOYMENT.md.
+2. Connect both from Integrations in a pilot workspace, run **Sync now**, and check that linked counts match the CRM and that no duplicates appear. Run it twice.
+3. Edit a contact in HubSpot and confirm the change arrives (webhook). Qualify a lead here and confirm the deal appears there.
+4. Book, move and cancel a meeting from a lead, and cancel one inside Google Calendar; the change shows here within a few minutes.
+5. Only then enable it for a real business.
+6. If a connection shows **degraded**, its token was revoked or expired. Errors say "Reconnect the integration": reconnecting resumes the sync from its checkpoint.
+
 ## Support workflow
 
 - Support staff (`SUPPORT_EMAILS`) see Operations read-only: workspaces, plan and subscription, onboarding progress, integration health, failed jobs and alerts. Opening a workspace's health is recorded in that workspace's audit log. Only operators (`ADMIN_EMAILS`) can change plans, flags or retry jobs.

@@ -25,6 +25,10 @@ proposal ─► price book + tax + payment schedule (code) ─► Proposal agent
 - **Budgets & metering**: every AI call, email and demo build is written to an append-only usage ledger. Money is reserved on an atomic per-tenant counter before work starts and settled with the real cost after, so parallel workers cannot overshoot a limit. Feature flags (`live_email`, `auto_send`, `prototypes`) stage the launch per tenant.
 - **Conversion**: every lead's first arrival at each funnel stage is an event. Cohort funnels, cost per opportunity and stage, score-band outcomes and controlled outreach experiments are all computed from those events. A versioned evaluation dataset guards scoring, pricing, guardrails and model behaviour (`npm run eval`, also in CI).
 - **Commercial readiness**: self-service, resumable onboarding with a safe rehearsal (the only recipient is you) and an explicit activation gate. Versioned plans with entitlement snapshots, enforced by API and workers independently of spending limits. Subscription state changes only through a signed, idempotent billing webhook or audited operator action. Read-only support access.
+- **Integrations**: HubSpot CRM and Google Calendar behind provider adapters.
+  - Durable, resumable sync with explicit field ownership and duplicate-safe matching.
+  - Verified, deduplicated webhooks with replay protection; encrypted OAuth tokens (state + PKCE).
+  - Meeting booking only from real free slots.
 - **Operations**: request ids flow into workflow correlation ids and structured logs (secrets redacted); readiness checks; alerts for provider outages, stalled queues, API errors, abnormal spend and failed scheduled tasks; an operators' console for metrics, flags and dead letters.
 - **Multi-tenancy**: every tenant-owned model uses a plugin that refuses any query without `organizationId`. Org context and roles are resolved server-side from memberships. Audit events are append-only.
 

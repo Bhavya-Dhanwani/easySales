@@ -19,6 +19,9 @@ Copy `server/.env.example` and set at least:
 | `API_RATE_LIMIT_PER_MIN`, `TENANT_RATE_LIMIT_PER_MIN`, `QUEUE_BACKPRESSURE` | per-IP and per-workspace request limits; queue depth above which follow-ups and campaign enrolment wait |
 | `WORKER_TYPES` | optional; comma-separated job types a worker process takes (e.g. `prototype.build`), so one workload can scale on its own. Empty means all |
 | `APP_VERSION` | optional; recorded on funnel events as the workflow version (defaults to the package version) |
+| `HUBSPOT_CLIENT_ID`, `HUBSPOT_CLIENT_SECRET` | HubSpot public app. Redirect URL `<PUBLIC_API_URL>/api/integrations/oauth/hubspot/callback`; webhook target `<PUBLIC_API_URL>/api/webhooks/hubspot` (contact/company/deal creation, deletion, property changes) |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | also used for Google Calendar. Add redirect URI `<PUBLIC_API_URL>/api/integrations/oauth/google_calendar/callback` and the scopes `calendar.events`, `calendar.freebusy`, `openid`, `email` to the consent screen |
+| `PUBLIC_API_URL` | public origin of the API (OAuth redirects, webhook signature URI). Defaults to `FRONTEND_URL` when the API serves the app |
 | `BILLING_WEBHOOK_SECRET` | shared secret for `POST /api/webhooks/billing` (the endpoint answers 503 until it is set) |
 | `SUPPORT_EMAILS` | optional; read-only support staff for the Operations page and workspace health |
 | `ALERT_WEBHOOK_URL` | optional; Slack or Discord incoming webhook |

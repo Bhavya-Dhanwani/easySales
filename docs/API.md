@@ -135,6 +135,30 @@ Each lead's qualification now carries `priority` (from `qualification.highPriori
 
 **Billing webhook.** `POST /api/webhooks/billing`, header `X-EasySales-Signature: hex HMAC-SHA256(raw body, BILLING_WEBHOOK_SECRET)`, body `{ id, type: subscription.activated | subscription.renewed | payment.failed | subscription.cancelled, organizationId, planKey?, periodStart?, periodEnd?, customerId?, subscriptionId? }`. Each `id` is applied once. Map your provider's events (Razorpay/Stripe) onto this in a small adapter. A browser redirect is never proof of payment.
 
+## Integrations: CRM & calendar (Sprint 8)
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/v1/integrations` | email, HubSpot and Google Calendar with status (`connected \| degraded \| disconnected`), account, last health check / sync, and the field-ownership table. Never tokens |
+| POST | `/v1/integrations/:provider/connect` | `hubspot \| google_calendar`. Returns `authorizeUrl` (single-use state, PKCE for Google, least-privilege scopes) |
+| GET | `/api/integrations/oauth/:provider/callback` | public; consumes the state (once, 10 min), exchanges the code, encrypts the tokens, binds the account to that workspace only, then redirects to `/app/integrations?connected=…` or `?error=…` |
+| POST | `/v1/integrations/:provider/test` · DELETE `/v1/integrations/:provider` | health check; disconnect revokes at the provider and deletes stored tokens |
+| PATCH | `/v1/integrations/:provider/settings` | HubSpot `{ stageOwner: platform \| crm }`; Google `{ timezone, workStart, workEnd, workDays, meetingMinutes, bufferMinutes, minNoticeHours }` |
+| POST | `/v1/integrations/hubspot/sync` | incremental import as a durable job (202); resumes from its checkpoint after failures or rate limits |
+| GET | `/v1/integrations/:provider/sync-status` · `/errors` | checkpoints, linked records, queued pushes/webhooks; actionable errors (e.g. "Reconnect the integration") |
+| POST | `/api/webhooks/hubspot` | HubSpot signature v3 (HMAC-SHA256 with the app's client secret over method+URI+body+timestamp), 5-minute replay window, each `eventId` stored once, tenant resolved from the connected portal |
+| GET | `/v1/calendar/availability?days=7` | free slots: working hours in the business timezone minus Google free/busy and meetings already held |
+| GET / POST | `/v1/calendar/events` | `?leadId=`; POST `{ leadId, start, inviteProspect, title? }`. Slot re-checked, held (no double booking), created with a deterministic event id (retries never duplicate), confirmation sent only after Google confirms |
+| PATCH / DELETE | `/v1/calendar/events/:id` | reschedule (re-checked) / cancel; only meetings we booked, never arbitrary calendar events |
+
+**Sync rules.**
+- **Pull** applies only CRM-owned fields (contact name, title, phone, identity email; company fields) and ignores updates older than the last one applied.
+- **Push** writes only platform-owned fields (deal stage when `stageOwner = platform`, deal amount from the latest sent proposal). CRM-owned values go out only when the record is created.
+- **Matching:** contacts by HubSpot id, then by email. Before any create, the record is looked up (domain, email, deal name), so an ambiguous response never causes a duplicate.
+- **Consent:** imported contacts get consent basis `none`, so outreach stays blocked until a basis is recorded.
+- **Deletions:** a deletion in the CRM marks the mapping and never deletes our history.
+
+The reply agent offers meeting times only from these free slots and never invents availability.
+
 ## Outreach, conversations, proposals (earlier sprints)
 `POST /v1/leads/:id/run` (research → qualify → outreach), `GET/POST /v1/approvals[/:id/approve|reject]`, `PATCH /v1/approvals/:id` (edit a draft), `GET /v1/conversations[/:id]`, `POST /v1/conversations/:id/inbound|reply`, `POST /v1/leads/:id/proposals`, `POST /v1/proposals/:id/send`, `PATCH /v1/proposals/:id`.
 

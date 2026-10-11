@@ -276,6 +276,39 @@ function ProposalCard({ p, onChange }: { p: Proposal; onChange: () => void }) {
   )
 }
 
+interface MeetingRow { _id: string; start: string; end: string; timezone: string; status: string; meetLink?: string; inviteProspect: boolean }
+
+// book from real free slots only; the prospect is invited only when you tick it
+function MeetingsCard({ leadId }: { leadId: string }) {
+  const toast = useToast()
+  const [invite, setInvite] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const { data, reload } = useLoad(async () => {
+    const meetings = (await api<{ meetings: MeetingRow[] }>(`/v1/calendar/events?leadId=${leadId}`)).meetings
+    const av = await api<{ timezone: string; slots: { start: string; label: string }[] }>('/v1/calendar/availability?days=7').catch(() => null)
+    return { meetings, av }
+  }, [leadId])
+  if (!data) return null
+  if (!data.av && !data.meetings.length) return null
+  const run = async (fn: () => Promise<unknown>, ok: string) => { setBusy(true); try { await fn(); toast(ok); reload() } catch (e) { toast((e as Error).message, true) } finally { setBusy(false) } }
+  const live = data.meetings.filter((m) => ['booked', 'rescheduled'].includes(m.status))
+  return (
+    <section className="card stack">
+      <div className="row-flex between"><span className="h2">Meetings</span><label className="check small"><input type="checkbox" checked={invite} onChange={(e) => setInvite(e.target.checked)} /> Send the prospect a calendar invite</label></div>
+      {live.map((m) => (
+        <div key={m._id} className="row-flex between small">
+          <span><Badge status="approved">{m.status}</Badge> {new Date(m.start).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}{m.meetLink && <> · <a href={m.meetLink} target="_blank" rel="noreferrer noopener">Meet link ↗</a></>}</span>
+          <button className="linkish" style={{ color: 'var(--bad)' }} disabled={busy} onClick={() => run(() => api(`/v1/calendar/events/${m._id}`, { method: 'DELETE' }), 'Cancelled')}>Cancel</button>
+        </div>
+      ))}
+      {data.av && <div className="chips">{data.av.slots.slice(0, 8).map((s) => (
+        <button key={s.start} className="badge plain" style={{ cursor: 'pointer' }} disabled={busy} onClick={() => run(() => api('/v1/calendar/events', { body: { leadId, start: s.start, inviteProspect: invite } }), 'Booked')}>{s.label.replace(/ \(.+\)$/, '')}</button>
+      ))}</div>}
+      {data.av && <span className="small muted">Free times in {data.av.timezone}. Each is re-checked against your calendar when you click.</span>}
+    </section>
+  )
+}
+
 function OpportunityTimeline({ leadId }: { leadId: string }) {
   const { data } = useLoad(() => api<{ events: AuditEvent[] }>(`/v1/opportunities/${leadId}/timeline`), [leadId])
   if (!data?.events.length) return null
@@ -310,6 +343,7 @@ export default function OpportunityWorkspace({ leadId }: { leadId: string }) {
         {data.proposals.length === 0 && !showBuilder && <p className="small muted" style={{ margin: 0 }}>No proposals yet. Prices, tax and payment schedule come from your configuration; the agent writes scope and narrative. Every revision is a new version.</p>}
         {data.proposals.map((p) => <ProposalCard key={p._id} p={p} onChange={reload} />)}
       </section>
+      <MeetingsCard leadId={leadId} />
       <OpportunityTimeline leadId={leadId} />
     </div>
   )
