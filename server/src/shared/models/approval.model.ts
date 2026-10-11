@@ -7,9 +7,9 @@ const approvalSchema = new mongoose.Schema({
 
     ...tenantFields,
 
-    actionType: { type: String, enum: ["outreach.send", "reply.send", "proposal.send", "prototype.build"], required: true },
+    actionType: { type: String, enum: ["outreach.send", "reply.send", "proposal.send", "prototype.build", "sales.action"], required: true },
 
-    targetType: { type: String, enum: ["message", "proposal", "prototype"], required: true },
+    targetType: { type: String, enum: ["message", "proposal", "prototype", "decision"], required: true },
 
     targetId: { type: mongoose.Schema.Types.ObjectId, required: true },
 
@@ -26,7 +26,7 @@ const approvalSchema = new mongoose.Schema({
 
     reasons: [String],
 
-    status: { type: String, enum: ["pending", "approved", "rejected", "expired"], default: "pending" },
+    status: { type: String, enum: ["pending", "deciding", "approved", "rejected", "expired"], default: "pending" },
 
     requestedBy: { type: String, default: "agent" },
 

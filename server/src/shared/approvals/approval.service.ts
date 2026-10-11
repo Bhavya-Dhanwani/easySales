@@ -1,4 +1,6 @@
 // Importing modules
+import { executeApprovedDecision } from "../sales/sales.service.js";
+import SalesDecision from "../models/salesDecision.model.js";
 import mongoose from "mongoose";
 import Approval from "../models/approval.model.js";
 import Message from "../models/message.model.js";
@@ -54,8 +56,24 @@ export async function decideApproval(
     organizationId: Id, approvalId: string, decision: "approved" | "rejected", userId: string,
     opts: { payloadHash?: string; note?: string } = {},
 ) {
-    const approval = await loadPending(organizationId, approvalId);
+    await loadPending(organizationId, approvalId);
+    // claim it atomically: of two simultaneous decisions only one proceeds, the other is refused
+    const approval = await Approval.findOneAndUpdate({ organizationId, _id: approvalId, status: "pending" }, { status: "deciding" }, { new: true });
+    if (!approval) throw new Conflict("Someone else is deciding this right now");
+    try {
+        await applyDecision(organizationId, approval, decision, userId, opts);
+    } catch (error) {
+        await Approval.updateOne({ organizationId, _id: approval._id, status: "deciding" }, { status: "pending" });
+        throw error;
+    }
+    return approval;
+}
 
+async function applyDecision(
+    organizationId: Id, approval: InstanceType<typeof Approval>, decision: "approved" | "rejected", userId: string,
+    opts: { payloadHash?: string; note?: string },
+) {
+    const approvalId = String(approval._id);
     if (decision === "approved") {
         if (opts.payloadHash !== approval.payloadHash) throw new Conflict("The action changed since you reviewed it. Reload and review again.");
 
@@ -76,6 +94,8 @@ export async function decideApproval(
             }
         } else if (approval.targetType === "prototype") {
             await decidePrototypeApproval(organizationId, approval.targetId, approval.payloadHash, true);
+        } else if (approval.targetType === "decision") {
+            await executeApprovedDecision(organizationId, approval.targetId);
         } else {
             const proposal = await Proposal.findOne({ organizationId, _id: approval.targetId, status: "pending_approval" });
             if (!proposal) throw new Conflict("Proposal is no longer awaiting approval");
@@ -84,6 +104,8 @@ export async function decideApproval(
         }
     } else if (approval.targetType === "prototype") {
         await decidePrototypeApproval(organizationId, approval.targetId, approval.payloadHash, false);
+    } else if (approval.targetType === "decision") {
+        await SalesDecision.updateOne({ organizationId, _id: approval.targetId, status: "proposed" }, { status: "skipped", outcome: opts.note || "Rejected by reviewer", completedAt: new Date() });
     } else if (approval.targetType === "message") {
         await Message.updateOne({ organizationId, _id: approval.targetId, status: "pending_approval" }, { status: "rejected", error: opts.note || "Rejected by reviewer" });
     } else {

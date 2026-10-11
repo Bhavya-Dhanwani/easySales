@@ -1,4 +1,5 @@
 // Importing modules
+import { emitSalesEvent } from "../../shared/sales/sales.service.js";
 import { offerableSlots } from "../../shared/integrations/calendar.service.js";
 import { recordStage } from "../../shared/analytics/analytics.service.js";
 import mongoose from "mongoose";
@@ -48,7 +49,7 @@ async function stopContact(s: S, conversationId: mongoose.Types.ObjectId, leadId
 }
 
 // 1. Classify the reply, update the CRM, decide the next permitted action
-async function classify(s: S) {
+async function classifyInbound(s: S) {
     await markStep(s.organizationId, s.workflowId, "classify_reply");
     const conversation = await Conversation.findOne({ organizationId: s.organizationId, _id: s.conversationId });
     if (!conversation) throw new Error("Conversation no longer exists");
@@ -131,6 +132,14 @@ async function classify(s: S) {
     await conversation.save();
 
     return { outcome: result.intent, reply, needsHuman: result.needsHuman, intent: result.intent };
+}
+
+// every processed reply (or opt-out) lets the next-best-action engine re-evaluate, once per message
+async function classify(s: S) {
+    const out = await classifyInbound(s);
+    const conv = await Conversation.findOne({ organizationId: s.organizationId, _id: s.conversationId }, { leadId: 1 }).lean();
+    if (conv) await emitSalesEvent(s.organizationId, conv.leadId, out.outcome === "opted_out" ? "conversation.opted_out" : "conversation.reply_received", s.inboundMessageId);
+    return out;
 }
 
 // 2. Send the reply through the policy gate

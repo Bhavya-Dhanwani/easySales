@@ -2,7 +2,7 @@
 import mongoose from "mongoose";
 import tenantPlugin, { tenantFields } from "../tenancy/tenant.plugin.js";
 
-export const OPPORTUNITY_STAGES = ["new", "qualified", "discovery", "proposal", "negotiation", "won", "lost"] as const;
+export const OPPORTUNITY_STAGES = ["new", "qualified", "discovery", "proposal", "negotiation", "nurture", "won", "lost"] as const;
 // research + qualification lifecycle (Sprint 2 pipeline)
 export const LEAD_STATUSES = ["new", "research_queued", "researching", "qualified", "needs_review", "disqualified", "research_failed"] as const;
 export const OUTREACH_STATUSES = ["not_started", "eligible", "active", "replied", "opted_out", "closed"] as const;
@@ -125,6 +125,16 @@ const leadSchema = new mongoose.Schema({
 
     // the CRM company this lead works at (company fields are CRM-owned once linked)
     crmCompanyId: String,
+
+    // next-best-action controls for this opportunity (escalations pause it until a human resumes)
+    automation: {
+        paused: Boolean,
+        pausedAt: Date,
+        pausedBy: String,
+        reason: String,
+        // the reply a human took over when resuming: it is not re-escalated or re-answered by the engine
+        handledInboundId: String,
+    },
 
     // set once when a won deal is handed over to delivery
     handoff: {

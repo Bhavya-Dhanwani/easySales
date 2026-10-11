@@ -1,4 +1,5 @@
 // Importing modules
+import { evaluate, scanInactivity } from "../shared/sales/sales.service.js";
 import { processIntegrationEvents, pullSync, pushLead } from "../shared/integrations/sync.service.js";
 import { reconcileMeetings } from "../shared/integrations/calendar.service.js";
 import { healthCheckIntegrations } from "../modules/private/integrations/integrations.router.js";
@@ -174,6 +175,9 @@ async function executeWorkflow(wf: WorkflowDoc) {
             await Workflow.updateOne(scope, { currentStep: "extract" });
             const r = await runRequirementsExtraction(wf.organizationId, wf.entityId, wf._id.toString(), wf.correlationId);
             await Workflow.updateOne(scope, { status: "completed", lockedUntil: null, currentStep: "done", result: { outcome: "requirements_extracted", ...r } });
+        } else if (wf.type === "sales.evaluate") {
+            const d = await evaluate(wf.organizationId, wf.entityId, String(wf.input?.trigger ?? "manual"), String(wf.input?.eventKey ?? wf._id));
+            await Workflow.updateOne(scope, { status: "completed", lockedUntil: null, currentStep: "done", result: { outcome: d.action, decision: String(d._id), policy: d.policyDecision } });
         } else if (wf.type === "integration.sync") {
             await Workflow.updateOne(scope, { currentStep: "sync" });
             const r = await pullSync(wf.organizationId);
@@ -413,6 +417,7 @@ export async function runOnce({ maxWorkflows = 5, maxMessages = 20, force = fals
         await task("ops_checks", () => runOpsChecks());
         await task("integration_health", () => healthCheckIntegrations());
         await task("calendar_reconcile", () => reconcileMeetings());
+        await task("inactivity_scan", () => scanInactivity());
     }
     if (Date.now() - lastRetentionRun > 24 * 3600_000) {
         lastRetentionRun = Date.now();

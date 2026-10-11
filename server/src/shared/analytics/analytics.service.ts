@@ -44,6 +44,11 @@ export async function recordStage(organizationId: Id, leadId: Id, stage: FunnelS
         // a connected CRM hears about stage changes through a durable job (imported lazily: no cycle at load)
         const { queueCrmPush } = await import("../integrations/sync.service.js");
         await queueCrmPush(organizationId, leadId, stage);
+        const event = ({ researched: "lead.researched", icp_qualified: "lead.qualified", delivered: "email.delivered", proposal_sent: "proposal.sent", won: "proposal.accepted" } as Record<string, string>)[stage];
+        if (event) {
+            const { emitSalesEvent } = await import("../sales/sales.service.js");
+            await emitSalesEvent(organizationId, leadId, event, stage);
+        }
     } catch (error) {
         if ((error as { code?: number }).code !== 11000) logger.warn({ error: (error as Error).message, stage }, "Funnel event not recorded");
     }

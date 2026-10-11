@@ -1,4 +1,9 @@
 // Importing modules
+import SalesDecision from "../../../shared/models/salesDecision.model.js";
+import Conversation from "../../../shared/models/conversation.model.js";
+import { evaluate, loadFacts, setPaused } from "../../../shared/sales/sales.service.js";
+import { candidates, salesState } from "../../../shared/sales/engine.js";
+import { publishPolicy } from "../../../shared/policy/policy.service.js";
 import { Meeting } from "../../../shared/models/integration.model.js";
 import { availability, bookMeeting, cancelMeeting, rescheduleMeeting } from "../../../shared/integrations/calendar.service.js";
 import Created from "../../../shared/responses/Created.response.js";
@@ -293,6 +298,57 @@ router.get("/proposals/:id/versions", authorize("proposals.read"), async (req: R
     const { ctx, proposal } = await ownProposal(req);
     const versions = await Proposal.find({ organizationId: ctx.organizationId, leadId: proposal.leadId }, { body: 0 }).sort({ version: -1 }).limit(50).lean();
     return Ok(res, "Versions", { versions });
+});
+
+/* ---------------------------- next best action ---------------------------- */
+
+/*
+    @route POST /api/v1/opportunities/:id/evaluate-next-action
+    @desc Decide the next action now (rules, plus the model when several are valid), then apply policy
+*/
+router.post("/opportunities/:id/evaluate-next-action", authorize("workflows.run"), async (req: Request, res: Response) => {
+    const { ctx, lead } = await opportunity(req);
+    return Ok(res, "Evaluated", { decision: await evaluate(ctx.organizationId, lead._id, "manual", `${ctx.userId}:${Date.now()}`) });
+});
+
+router.get("/opportunities/:id/decisions", authorize("leads.read"), async (req: Request, res: Response) => {
+    const { ctx, lead } = await opportunity(req);
+    const decisions = await SalesDecision.find({ organizationId: ctx.organizationId, leadId: lead._id }).sort({ createdAt: -1 }).limit(50).lean();
+    const facts = await loadFacts(ctx.organizationId, lead._id);
+    return Ok(res, "Decisions", { decisions, state: salesState(facts), paused: facts.paused, candidates: candidates(facts).map((c) => ({ action: c.action, reason: c.reason })) });
+});
+
+router.post("/opportunities/:id/pause-automation", authorize("workflows.run"), validate(z.object({ reason: z.string().trim().max(300).optional() }).strict()), async (req: Request, res: Response) => {
+    const { ctx, lead } = await opportunity(req);
+    await setPaused(ctx.organizationId, lead._id, true, ctx.userId, req.body.reason ?? "Paused by a user");
+    return Ok(res, "Automation paused for this opportunity");
+});
+
+router.post("/opportunities/:id/resume-automation", authorize("workflows.run"), async (req: Request, res: Response) => {
+    const { ctx, lead } = await opportunity(req);
+    await setPaused(ctx.organizationId, lead._id, false, ctx.userId);
+    await Conversation.updateOne({ organizationId: ctx.organizationId, leadId: lead._id, status: "needs_review" }, { status: "open" });
+    return Ok(res, "Automation resumed", { decision: await evaluate(ctx.organizationId, lead._id, "resumed", `${ctx.userId}:${Date.now()}`) });
+});
+
+/*
+    @route GET|PUT /api/v1/automation-settings
+    @desc Autonomy level and event-driven automation (published as a policy version)
+*/
+router.get("/automation-settings", authorize("policies.read"), async (req: Request, res: Response) => {
+    const ctx = ctxOf(req);
+    const { config, version } = await getCurrentPolicy(ctx.organizationId);
+    return Ok(res, "Automation settings", { automation: config.automation, policyVersion: version });
+});
+
+router.put("/automation-settings", authorize("policies.write"), validate(z.object({
+    level: z.union([z.literal(1), z.literal(2), z.literal(3)]), eventDriven: z.boolean(), inactivityDays: z.number().int().min(1).max(90),
+}).strict()), async (req: Request, res: Response) => {
+    const ctx = ctxOf(req);
+    const { config, version } = await getCurrentPolicy(ctx.organizationId);
+    const policy = await publishPolicy(ctx.organizationId, { ...config, automation: req.body }, ctx.userId);
+    await audit({ organizationId: ctx.organizationId, actorType: "user", actorId: ctx.userId, action: "policy.publish", targetType: "policy", targetId: String(policy._id), outcome: "success", policyVersion: policy.version, metadata: { previousVersion: version, automation: req.body } });
+    return Ok(res, "Automation settings saved", { automation: req.body, policyVersion: policy.version });
 });
 
 /* ------------------------------- calendar ------------------------------- */

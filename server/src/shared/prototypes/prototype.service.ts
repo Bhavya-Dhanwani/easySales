@@ -1,4 +1,5 @@
 // Importing modules
+import { emitSalesEvent } from "../sales/sales.service.js";
 import { quotaLeft } from "../billing/subscription.service.js";
 import { createHash, randomBytes } from "node:crypto";
 import mongoose from "mongoose";
@@ -254,6 +255,7 @@ export async function buildPrototype(organizationId: Id, prototypeId: Id, workfl
             );
             if (!done.modifiedCount) return { outcome: "cancelled" };
             await settleBuild(organizationId, prototypeId);
+            await emitSalesEvent(organizationId, p.opportunityId, "prototype.ready", String(prototypeId));
             await audit({ organizationId, actorType: "agent", actorId: "prototype_builder", action: "prototype.built", targetType: "prototype", targetId: String(prototypeId), outcome: "success", correlationId, metadata: { attempts: p.attempts, costMinor: p.costMinorUnits } });
             return { outcome: "built" };
         }

@@ -1,6 +1,7 @@
 // Importing modules
 import { createHash, randomUUID } from "node:crypto";
-import { DATASET_VERSION, GUARDRAILS, PRICING, QUALIFICATION, REPLY_INTENT, REQUIREMENTS, SCORING } from "./dataset.js";
+import { DATASET_VERSION, DECISIONS, GUARDRAILS, PRICING, QUALIFICATION, REPLY_INTENT, REQUIREMENTS, SCORING } from "./dataset.js";
+import { authorize, candidates, canTransition, SalesAction } from "../shared/sales/engine.js";
 import { calculateLeadScore, decideStatus } from "../shared/qualification/scoring.js";
 import { priceProposal } from "../shared/utils/pricing.util.js";
 import { handleInbound, isAutoReply, isOptOut } from "../agents/conversation.agent.js";
@@ -47,6 +48,18 @@ function deterministic(): EvalResult[] {
         const got = { optOut: isOptOut(e.text), autoReply: isAutoReply(e.subject) };
         out.push({ taskType: "guardrails", exampleId: e.id, passed: same(got, e.expect), ...code, ...(same(got, e.expect) ? {} : { failureCategory: "guardrail_miss", detail: JSON.stringify(got) }) });
     }
+    for (const e of DECISIONS) {
+        const options = candidates(e.facts).map((c) => c.action);
+        const problems = [
+            options[0] !== e.expectFirst && `first action ${options[0]}, expected ${e.expectFirst}`,
+            ...(e.forbid ?? []).filter((a) => options.includes(a as SalesAction)).map((a) => `forbidden ${a} offered`),
+            ...Object.entries(e.authorize ?? {}).filter(([a, want]) => authorize(a as SalesAction, e.facts).decision !== want).map(([a, want]) => `${a} is ${authorize(a as SalesAction, e.facts).decision}, expected ${want}`),
+        ].filter(Boolean) as string[];
+        out.push({ taskType: "decision_guardrails", exampleId: e.id, passed: !problems.length, ...code, ...(problems.length ? { failureCategory: "guardrail", detail: problems.join("; ") } : {}) });
+    }
+    // "Sounds great" is never a win: only acceptance evidence can move a deal to won
+    const won = !canTransition("discovery", "won", "agent") && !canTransition("discovery", "won", "user") && canTransition("negotiation", "won", "user", true);
+    out.push({ taskType: "decision_guardrails", exampleId: "won-needs-acceptance-evidence", passed: won, ...code, ...(won ? {} : { failureCategory: "guardrail" }) });
     return out;
 }
 

@@ -65,6 +65,13 @@ export const PolicyConfigSchema = z.object({
         monthlyBudgetMinor: z.number().int().min(0).max(1e11),
         previewDays: z.number().int().min(1).max(30),
     }).default({ enabled: true, autoBuild: true, costPerAttemptMinor: 50_00, maxAttempts: 2, maxPerPrototypeMinor: 200_00, monthlyBudgetMinor: 5000_00, previewDays: 7 }),
+    // next-best-action engine: 1 copilot (a human approves external actions), 2 supervised, 3 bounded
+    automation: z.object({
+        level: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+        // when on, business events (replies, meetings, proposals, inactivity) trigger an evaluation
+        eventDriven: z.boolean(),
+        inactivityDays: z.number().int().min(1).max(90),
+    }).default({ level: 1, eventDriven: false, inactivityDays: 7 }),
     // data retention (days); enforced daily by the worker
     retention: z.object({
         messageDays: z.number().int().min(30).max(3650),
@@ -93,4 +100,5 @@ export const DEFAULT_POLICY: PolicyConfig = {
     budgets: { maxLlmCallsPerDay: 500, monthlySpendMinor: 10_000_00, maxResearchPerDay: 200, maxConcurrentResearch: 3, maxConcurrentBuilds: 1, artifactStorageBytes: 20_000_000 },
     prototypes: { enabled: true, autoBuild: true, costPerAttemptMinor: 50_00, maxAttempts: 2, maxPerPrototypeMinor: 200_00, monthlyBudgetMinor: 5000_00, previewDays: 7 },
     retention: { messageDays: 365, auditDays: 730 },
+    automation: { level: 1, eventDriven: false, inactivityDays: 7 },
 };

@@ -1,4 +1,5 @@
 // Importing modules
+import { canTransition } from "../../../shared/sales/engine.js";
 import { assertQuota } from "../../../shared/billing/subscription.service.js";
 import { recordDiscoveredImport, recordStage } from "../../../shared/analytics/analytics.service.js";
 import express, { Request, Response } from "express";
@@ -324,7 +325,9 @@ router.patch("/:id", authorize("leads.write"), validate(UpdateLeadSchema), async
     if (!lead) throw new NotFound("Lead not found");
     const body = req.body as z.infer<typeof UpdateLeadSchema>;
     // "won" is reached only through the handoff of an accepted proposal, never by a status edit
-    if (body.opportunityStage === "won" && lead.opportunityStage !== "won") throw new Conflict("Record the accepted proposal and hand the deal over to mark it won");
+    if (body.opportunityStage && !canTransition(lead.opportunityStage, body.opportunityStage, "user")) {
+        throw new Conflict(body.opportunityStage === "won" ? "Record the accepted proposal and hand the deal over to mark it won" : `Cannot move from ${lead.opportunityStage} to ${body.opportunityStage}`);
+    }
     if (body.opportunityStage) lead.opportunityStage = body.opportunityStage;
     if (body.contact) {
         for (const [k, v] of Object.entries(body.contact)) lead.set(`contact.${k}`, v || undefined);

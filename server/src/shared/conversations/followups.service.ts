@@ -19,8 +19,10 @@ type Conv = { _id: mongoose.Types.ObjectId; leadId: mongoose.Types.ObjectId; sta
 export async function followUpStopReason(organizationId: Id, conv: Conv): Promise<string | null> {
     if (conv.status !== "waiting") return `Conversation is ${conv.status}`;
     if (conv.assignedTo) return "Assigned to a human for manual handling";
-    const lead = await Lead.findOne({ organizationId, _id: conv.leadId }, { status: 1, opportunityStage: 1, outreachStatus: 1, "contact.email": 1 }).lean();
+    const lead = await Lead.findOne({ organizationId, _id: conv.leadId }, { status: 1, opportunityStage: 1, outreachStatus: 1, "contact.email": 1, automation: 1 }).lean();
     if (!lead) return "Lead deleted";
+    if (lead.automation?.paused) return "Automation paused for this opportunity";
+    if (lead.opportunityStage === "nurture") return "Opportunity in nurture";
     if (lead.status === "disqualified") return "Lead disqualified";
     if (["won", "lost"].includes(lead.opportunityStage)) return `Opportunity ${lead.opportunityStage}`;
     if (["opted_out", "closed", "replied"].includes(lead.outreachStatus)) return `Lead ${lead.outreachStatus.replace("_", " ")}`;

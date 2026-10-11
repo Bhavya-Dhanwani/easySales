@@ -1,4 +1,5 @@
 // Importing modules
+import { emitSalesEvent } from "../sales/sales.service.js";
 import { createHash } from "node:crypto";
 import mongoose from "mongoose";
 import { IntegrationConnection, Meeting } from "../models/integration.model.js";
@@ -176,6 +177,7 @@ export async function bookMeeting(organizationId: Id, input: { leadId: string; s
         await Meeting.updateOne({ organizationId, _id: meeting._id }, { status: "failed", cancelledReason: (error as Error).message.slice(0, 200) });
         throw error;
     }
+    await emitSalesEvent(organizationId, lead._id, "meeting.booked", String(meeting._id));
     await audit({ organizationId, actorType: "user", actorId: userId, action: "meeting.booked", targetType: "lead", targetId: String(lead._id), outcome: "success", metadata: { start: input.start, invited: input.inviteProspect } });
     await confirm(organizationId, lead._id, `Confirmed: ${label(input.start, end, timezone)}.${meeting.meetLink ? ` Join here: ${meeting.meetLink}` : ""}${input.inviteProspect ? " A calendar invitation is on its way." : ""}`, userId, `meeting:${meeting._id}:confirm`);
     return meeting;
@@ -210,6 +212,7 @@ export async function cancelMeeting(organizationId: Id, meetingId: string, userI
     await withProvider(organizationId, "google_calendar", (token) => googleCalendar.deleteEvent(token, m.externalEventId, m.inviteProspect));
     m.set({ status: "cancelled", cancelledReason: reason });
     await m.save();
+    await emitSalesEvent(organizationId, m.leadId, "meeting.cancelled", String(m._id));
     await audit({ organizationId, actorType: "user", actorId: userId, action: "meeting.cancelled", targetType: "lead", targetId: String(m.leadId), outcome: "success", metadata: { reason } });
     return m;
 }
