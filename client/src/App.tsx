@@ -15,6 +15,7 @@ const Research = lazy(() => import('./app/Research'))
 const Email = lazy(() => import('./app/Email'))
 const Campaigns = lazy(() => import('./app/Campaigns'))
 const Analytics = lazy(() => import('./app/Analytics'))
+const Billing = lazy(() => import('./app/Billing'))
 const Experiments = lazy(() => import('./app/Analytics').then((m) => ({ default: m.Experiments })))
 const CampaignDetail = lazy(() => import('./app/Campaigns').then((m) => ({ default: m.CampaignDetail })))
 const ReviewQueue = lazy(() => work().then((m) => ({ default: m.ReviewQueue })))
@@ -62,6 +63,7 @@ export default function App() {
           <Route path="review" element={<ReviewQueue />} />
           <Route path="campaigns" element={<Campaigns />} />
           <Route path="analytics" element={<Analytics />} />
+          <Route path="billing" element={<Billing />} />
           <Route path="experiments" element={<Experiments />} />
           <Route path="campaigns/:id" element={<CampaignDetail />} />
           <Route path="email" element={<Email />} />

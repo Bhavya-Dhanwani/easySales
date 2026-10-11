@@ -17,7 +17,7 @@ For whoever is on call for easySales during the pilot. Keep it short and current
 ## Controlled launch
 
 1. **Internal:** create a test workspace, set its `live_email` flag **off** (Operations → Feature flags). Emails are captured as sent and never delivered. Run synthetic leads through research → outreach → reply → demo → proposal → handoff.
-2. **One pilot business:** configure its ICP, services/price book, terms, connected mailbox, roles and strict limits (Autonomy & limits → monthly spend, research per day, demo budget). Start with `auto_send` **off**: every message and proposal waits for a human even where policy would allow it.
+2. **One pilot business:** they sign up and follow Setup themselves (business, ICP, voice, mailbox, limits, a rehearsal email to themselves, then **Activate**). Nothing reaches a real prospect before activation. Give them their plan from Operations → Workspaces → Set plan (recorded in their audit log) until a billing provider is wired to the billing webhook. Then configure: configure its ICP, services/price book, terms, connected mailbox, roles and strict limits (Autonomy & limits → monthly spend, research per day, demo budget). Start with `auto_send` **off**: every message and proposal waits for a human even where policy would allow it.
 3. **Limited autonomy:** after a week with clean delivery and no incidents, turn `auto_send` on for that tenant. Exceptions (discounts, prohibited claims, low confidence, pricing questions) still require approval by policy.
 4. **Expand** to a few more businesses only after reviewing delivery/bounce rates, reply quality, cost per opportunity, demo success and incidents.
 
@@ -49,6 +49,8 @@ Alerts go to the logs, the tenant's audit log (tenant alerts) and `ALERT_WEBHOOK
 5. **Review** within 2 working days: timeline, cause, what will prevent it. Cross-tenant access, unauthorized outreach or a preview escaping its sandbox are **sev-1** and block releases until fixed and covered by a test.
 
 ## Support workflow
+
+- Support staff (`SUPPORT_EMAILS`) see Operations read-only: workspaces, plan and subscription, onboarding progress, integration health, failed jobs and alerts. Opening a workspace's health is recorded in that workspace's audit log. Only operators (`ADMIN_EMAILS`) can change plans, flags or retry jobs.
 
 - Pilot users report in a shared channel or `support@` with the workspace name, what they did and when.
 - Look up the workspace's audit log (Audit log page or `GET /api/v1/audit-events`) and the request id from the browser's network tab (`X-Request-Id` header).

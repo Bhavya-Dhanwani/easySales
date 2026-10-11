@@ -8,6 +8,7 @@ interface AuthState {
   organizations: OrgSummary[]
   org: OrgSummary | null
   isPlatformAdmin: boolean
+  isSupport: boolean
   login(email: string, password: string): Promise<User>
   signup(input: { name: string; email: string; password: string; organizationName?: string }): Promise<User>
   verify(otp: string): Promise<void>
@@ -26,11 +27,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [organizations, setOrganizations] = useState<OrgSummary[]>([])
   const [orgId, setOrgState] = useState<string | null>(getOrgId())
   const [isPlatformAdmin, setAdmin] = useState(false)
+  const [isSupport, setSupport] = useState(false)
 
   const loadMe = useCallback(async () => {
-    const me = await api<{ user: User; organizations: OrgSummary[]; isPlatformAdmin?: boolean }>('/auth/me')
+    const me = await api<{ user: User; organizations: OrgSummary[]; isPlatformAdmin?: boolean; isSupport?: boolean }>('/auth/me')
     setUser(me.user)
     setAdmin(Boolean(me.isPlatformAdmin))
+    setSupport(Boolean(me.isSupport))
     setOrganizations(me.organizations)
     // keep a valid active organization selected
     const current = getOrgId()
@@ -61,6 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     organizations,
     org: organizations.find((o) => o.id === orgId) ?? organizations[0] ?? null,
     isPlatformAdmin,
+    isSupport,
     login: async (email, password) => start(await api<SessionData>('/auth/login', { body: { email, password } })),
     signup: async (input) => start(await api<SessionData>('/auth/signup', { body: input })),
     verify: async (otp) => { await start(await api<SessionData>('/auth/verify-email', { body: { otp } })) },
@@ -72,7 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     switchOrg: (id) => { setOrgId(id); setOrgState(id) },
     reload: loadMe,
-  }), [ready, user, organizations, orgId, start, loadMe, isPlatformAdmin])
+  }), [ready, user, organizations, orgId, start, loadMe, isPlatformAdmin, isSupport])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

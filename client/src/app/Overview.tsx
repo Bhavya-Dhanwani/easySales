@@ -22,6 +22,7 @@ interface Summary { total: number; counts: Record<string, number>; averageScore:
 
 export default function Overview() {
   const { user, org } = useAuth()
+  const { data: setup } = useLoad(() => api<{ activatedAt: string | null; currentStep: string | null }>('/v1/onboarding/status'), [org?.id])
   const { data, loading } = useLoad(async () => {
     const [dash, summary, profile] = await Promise.all([
       api<Dashboard>('/v1/dashboard'),
@@ -42,6 +43,12 @@ export default function Overview() {
         {dash.pendingApprovals > 0 && <Link className="btn lime" to="/app/review">{dash.pendingApprovals} to approve</Link>}
       </PageHead>
 
+      {setup && !setup.activatedAt && (
+        <div className="card row-flex between" style={{ borderColor: 'var(--forest-3)' }}>
+          <span>Your workspace is not live yet: nothing is sent to prospects until setup is finished and you activate it.</span>
+          <Link className="btn sm lime" to="/app/onboarding">Continue setup</Link>
+        </div>
+      )}
       <div className="welcome">
         <div className="stack sm">
           <span className="eyebrow" style={{ background: 'rgba(255,255,255,0.08)', color: 'var(--lime)', borderColor: 'rgba(255,255,255,0.12)', justifySelf: 'start' }}>{needsSetup ? 'Setup' : 'Pipeline health'}</span>

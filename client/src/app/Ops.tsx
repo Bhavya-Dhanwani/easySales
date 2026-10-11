@@ -27,28 +27,30 @@ interface Capacity {
   database: { pingMs: number; poolMax: number | null }
   recommendations: string[]
 }
+interface OrgRow { id: string; name: string; industry?: string; activatedAt: string | null; plan: string | null; subscriptionStatus: string | null; periodEnd: string | null; email: string; members: number; failedJobs24h: number }
 interface EvalRun { _id: { runId: string; taskType: string; modelVersion: string; promptVersion: string; datasetVersion: string }; total: number; passed: number; at: string; failures: { id: string; category: string; detail?: string }[] }
 
 const FLAGS = ['live_email', 'auto_send', 'prototypes']
 
 // platform operators: health of the whole system, rollout switches and failed work
 export default function Ops() {
-  const { isPlatformAdmin } = useAuth()
+  const { isPlatformAdmin, isSupport } = useAuth()
   const toast = useToast()
   const [form, setForm] = useState({ key: 'live_email', organizationId: '', enabled: false, note: '' })
   const { data, reload } = useLoad(async () => {
-    const [metrics, flags, dead, capacity, evals] = await Promise.all([
+    const [metrics, flags, dead, capacity, evals, orgs] = await Promise.all([
       api<Metrics>('/admin/metrics/summary'),
       api<{ flags: Flag[]; defaults: Record<string, boolean> }>('/admin/feature-flags'),
       api<DeadLetters>('/admin/dead-letters'),
       api<Capacity>('/admin/analytics/worker-capacity'),
       api<{ runs: EvalRun[] }>('/admin/evaluations/results'),
+      api<{ organizations: OrgRow[] }>('/admin/organizations'),
     ])
-    return { metrics, flags, dead, capacity, evals: evals.runs }
+    return { metrics, flags, dead, capacity, evals: evals.runs, orgs: orgs.organizations }
   }, [])
-  if (!isPlatformAdmin) return <Empty title="Operators only.">Add your email to ADMIN_EMAILS on the server to see this page.</Empty>
+  if (!isPlatformAdmin && !isSupport) return <Empty title="Operators only.">Add your email to ADMIN_EMAILS (or SUPPORT_EMAILS for read-only) on the server to see this page.</Empty>
   if (!data) return <Spinner label="Loading operations" />
-  const { metrics: m, flags, dead, capacity: cap, evals } = data
+  const { metrics: m, flags, dead, capacity: cap, evals, orgs } = data
   const run = async (fn: () => Promise<unknown>, ok: string) => { try { await fn(); toast(ok); await reload() } catch (e) { toast((e as Error).message, true) } }
 
   return (
@@ -78,6 +80,27 @@ export default function Ops() {
           {m.spendThisMonth.topTenants.map((t) => <div key={t.organizationId} className="row-flex between small"><span className="mono">{t.organizationId}</span><span className="mono">{money(t.costMinor)}</span></div>)}
         </section>
       </div>
+
+      <section className="card stack">
+        <span className="h2">Workspaces</span>
+        <div className="table-wrap"><table className="table">
+          <thead><tr><th>Workspace</th><th>Plan</th><th>Live</th><th>Email</th><th>Members</th><th>Failed 24 h</th><th /></tr></thead>
+          <tbody>{orgs.map((o) => (
+            <tr key={o.id}>
+              <td><b>{o.name}</b><br /><span className="mono small muted">{o.id}</span></td>
+              <td>{o.plan ?? '—'} <Badge status={o.subscriptionStatus === 'active' ? 'approved' : o.subscriptionStatus === 'trialing' ? 'pending' : 'failed'}>{o.subscriptionStatus ?? 'none'}</Badge></td>
+              <td>{o.activatedAt ? '✓' : 'setup'}</td><td>{human(o.email)}</td><td>{o.members}</td><td>{o.failedJobs24h}</td>
+              <td>{isPlatformAdmin && <button className="linkish" onClick={() => {
+                const planKey = window.prompt('Plan for this workspace (starter, growth, scale)', o.plan ?? 'growth')
+                const days = planKey && window.prompt('Active for how many days?', '30')
+                const note = days && window.prompt('Reason (recorded in their audit log)')
+                if (planKey && days && note) run(() => api(`/admin/organizations/${o.id}/subscription`, { body: { planKey, status: 'active', periodDays: Number(days), note } }), 'Subscription updated')
+              }}>Set plan</button>}</td>
+            </tr>
+          ))}</tbody>
+        </table></div>
+        <span className="small muted">{isPlatformAdmin ? 'Changes are written to the workspace’s own audit log.' : 'Read-only support access. Opening a workspace’s health is recorded in its audit log.'}</span>
+      </section>
 
       <section className="card stack">
         <span className="h2">Worker capacity</span>

@@ -110,6 +110,31 @@ Every response carries `X-Request-Id` (a sane incoming one is kept). Workflows s
 
 Each lead's qualification now carries `priority` (from `qualification.highPriorityScore` / `mediumPriorityScore`) and each criterion an `observedAt`. Higher-priority lead work is leased first.
 
+## Onboarding, plans & support (Sprint 7)
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/v1/onboarding/organizations` | `{ name, industry, timezone, defaultCurrency? }`: another workspace for the signed-in user (owner; trial starts) |
+| GET | `/v1/onboarding/status` | steps `organization → business → icp → voice → email → limits → test_run → activation`, each with what is missing; `currentStep` is the first unfinished one (resumable) |
+| PUT | `/v1/onboarding/organization` · `/business-profile` · `/icp` · `/limits` | each saves real configuration (profile and policy versions); `business-profile` confirms voice/claims, `limits` publishes a policy version |
+| POST | `/v1/onboarding/validate` | `{ ok, issues: [{ step, issue }] }` |
+| POST | `/v1/onboarding/test-run` | 202. Runs the real pipeline on a synthetic lead whose only contact is the requesting user. Never counted in analytics, never enrolled in campaigns |
+| POST | `/v1/onboarding/activate` | only when every step passed. **Before activation no message can go to anyone except the test lead** |
+| GET | `/v1/plans` | latest active version of each plan |
+| GET | `/v1/organization/subscription` · `/v1/organization/entitlements` | subscription (plan version and entitlement snapshot), limits in force, usage this period, `suspended` |
+| POST | `/v1/organization/subscription` | `{ planKey }`. During a trial it switches at once; a downgrade waits for period end; an upgrade becomes `pendingPlanKey` until the billing webhook confirms payment |
+| POST | `/v1/organization/subscription/cancel` | cancel at period end |
+| GET | `/v1/integrations` | every integration with status `connected \| degraded \| disconnected \| not_available` and last health check. Email uses `/v1/integrations/email/connect \| test \| rotate-secret`, `DELETE /v1/integrations/email` |
+| GET | `/api/admin/organizations` · `/api/admin/organizations/:id/health` | staff (`ADMIN_EMAILS` or read-only `SUPPORT_EMAILS`). Viewing a workspace's health writes `support.view_health` to its audit log |
+| POST | `/api/admin/organizations/:id/subscription` | operators only: `{ planKey?, status?, periodDays?, note }` (pilots, comps, extensions); audited in the tenant's log |
+| POST | `/api/admin/plans` | operators only: publish a new immutable plan version |
+
+**Plan limits vs spending limits.** Entitlements (`maxMembers`, `researchJobsPerMonth`, `emailSendsPerMonth`, `prototypeBuildsPerMonth`, `analyticsLevel`, `apiAccess`) count work per subscription period. The policy's `budgets.monthlySpendMinor` caps money. Either one stops spending independently.
+- **Enforced in the API:** invites, research and demo requests answer 402 at the limit; advanced analytics and experiments need `analyticsLevel: advanced`.
+- **Enforced in the workers:** research waits for the next period; email over quota is held (`queued`, never dropped) and released by an upgrade.
+- **Suspension:** past_due beyond a 7-day grace, or cancelled, means suspended (read and export only).
+
+**Billing webhook.** `POST /api/webhooks/billing`, header `X-EasySales-Signature: hex HMAC-SHA256(raw body, BILLING_WEBHOOK_SECRET)`, body `{ id, type: subscription.activated | subscription.renewed | payment.failed | subscription.cancelled, organizationId, planKey?, periodStart?, periodEnd?, customerId?, subscriptionId? }`. Each `id` is applied once. Map your provider's events (Razorpay/Stripe) onto this in a small adapter. A browser redirect is never proof of payment.
+
 ## Outreach, conversations, proposals (earlier sprints)
 `POST /v1/leads/:id/run` (research → qualify → outreach), `GET/POST /v1/approvals[/:id/approve|reject]`, `PATCH /v1/approvals/:id` (edit a draft), `GET /v1/conversations[/:id]`, `POST /v1/conversations/:id/inbound|reply`, `POST /v1/leads/:id/proposals`, `POST /v1/proposals/:id/send`, `PATCH /v1/proposals/:id`.
 

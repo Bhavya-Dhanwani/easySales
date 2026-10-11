@@ -19,6 +19,8 @@ Copy `server/.env.example` and set at least:
 | `API_RATE_LIMIT_PER_MIN`, `TENANT_RATE_LIMIT_PER_MIN`, `QUEUE_BACKPRESSURE` | per-IP and per-workspace request limits; queue depth above which follow-ups and campaign enrolment wait |
 | `WORKER_TYPES` | optional; comma-separated job types a worker process takes (e.g. `prototype.build`), so one workload can scale on its own. Empty means all |
 | `APP_VERSION` | optional; recorded on funnel events as the workflow version (defaults to the package version) |
+| `BILLING_WEBHOOK_SECRET` | shared secret for `POST /api/webhooks/billing` (the endpoint answers 503 until it is set) |
+| `SUPPORT_EMAILS` | optional; read-only support staff for the Operations page and workspace health |
 | `ALERT_WEBHOOK_URL` | optional; Slack or Discord incoming webhook |
 | `RUN_WORKER` | `false` on API instances when you run a separate worker |
 
