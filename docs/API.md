@@ -184,6 +184,16 @@ Requested discounts are parsed by code: within the limit, a proposal revision is
 
 **Events** (when `eventDriven` is on): lead.researched, lead.qualified, email.delivered, conversation.reply_received, conversation.opted_out, meeting.booked, meeting.cancelled, prototype.ready, proposal.sent, proposal.accepted, opportunity.inactive (weekly). Each becomes one idempotent evaluation job, so a duplicated event never produces a second decision or action.
 
+## Release, billing records & launch metrics (Sprint 10)
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/api/webhooks/billing` | adds `invoice.paid` and `payment.refunded` (`amountMinor`, `currency`, `invoiceId`). They are recorded as billing records (money) and never change access |
+| GET | `/api/admin/billing/reconciliation` | staff: per workspace, expected vs paid vs refunded this period, with issues ("active without full payment", "paid but cancelled", "payment failed") |
+| GET | `/api/admin/launch-dashboard?days=30` | staff: activation, sales outcomes, conversion, economics (usage cost, net revenue, cost per qualified opportunity and win, gross margin), reliability, retention, AI decisions (automatic / approval / blocked / escalated, approvals rejected) with metric definitions |
+| GET | `/api/admin/quality-sample` | staff: a random sample of recent AI decisions and messages for human review |
+
+Public pages: `/help`, `/terms`, `/privacy`. Release tooling: `npm run migrate`, `scripts/smoke.ts`, `render.yaml`, `.github/workflows/release.yml`.
+
 ## Outreach, conversations, proposals (earlier sprints)
 `POST /v1/leads/:id/run` (research → qualify → outreach), `GET/POST /v1/approvals[/:id/approve|reject]`, `PATCH /v1/approvals/:id` (edit a draft), `GET /v1/conversations[/:id]`, `POST /v1/conversations/:id/inbound|reply`, `POST /v1/leads/:id/proposals`, `POST /v1/proposals/:id/send`, `PATCH /v1/proposals/:id`.
 

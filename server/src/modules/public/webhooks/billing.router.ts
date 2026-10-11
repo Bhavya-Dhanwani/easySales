@@ -2,7 +2,7 @@
 import express, { Request, Response } from "express";
 import { z } from "zod";
 import mongoose from "mongoose";
-import { BillingEvent } from "../../../shared/models/subscription.model.js";
+import { BillingEvent, BillingRecord } from "../../../shared/models/subscription.model.js";
 import Organization from "../../../shared/models/organization.model.js";
 import { applySubscriptionChange, getSubscription } from "../../../shared/billing/subscription.service.js";
 import { verifySignature } from "./webhooks.router.js";
@@ -17,13 +17,16 @@ const router = express.Router();
 // normalized contract a Razorpay / Stripe / Paddle handler is mapped onto
 const BillingEventSchema = z.object({
     id: z.string().min(1).max(200),
-    type: z.enum(["subscription.activated", "subscription.renewed", "payment.failed", "subscription.cancelled"]),
+    type: z.enum(["subscription.activated", "subscription.renewed", "payment.failed", "subscription.cancelled", "invoice.paid", "payment.refunded"]),
     organizationId: z.string().regex(/^[a-f0-9]{24}$/),
     planKey: z.string().max(40).optional(),
     periodStart: z.coerce.date().optional(),
     periodEnd: z.coerce.date().optional(),
     customerId: z.string().max(200).optional(),
     subscriptionId: z.string().max(200).optional(),
+    amountMinor: z.number().int().min(0).optional(),
+    currency: z.string().length(3).optional(),
+    invoiceId: z.string().max(200).optional(),
 }).strict();
 
 /*
@@ -58,6 +61,13 @@ router.post("/", async (req: Request, res: Response) => {
             // a paid upgrade takes the plan that was pending; a renewal applies a scheduled downgrade
             planKey: e.planKey ?? sub.pendingPlanKey ?? sub.scheduledPlanKey ?? undefined, cancelAtPeriodEnd: false,
         }, actor);
+    } else if (e.type === "invoice.paid" || e.type === "payment.refunded") {
+        if (e.amountMinor === undefined || !e.currency) throw new BadRequest("amountMinor and currency are required");
+        // money only: access is changed by subscription events, never by an invoice row
+        await BillingRecord.create({
+            organizationId, eventId: e.id, kind: e.type === "invoice.paid" ? "invoice" : "refund", amountMinor: e.amountMinor, currency: e.currency.toUpperCase(),
+            providerInvoiceId: e.invoiceId, periodStart: e.periodStart, periodEnd: e.periodEnd, planKey: e.planKey ?? sub.planKey,
+        });
     } else if (e.type === "payment.failed") {
         await applySubscriptionChange(organizationId, { status: "past_due" }, actor);
     } else {

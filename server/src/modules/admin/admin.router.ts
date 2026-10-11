@@ -1,4 +1,5 @@
 // Importing modules
+import { launchDashboard, reconcileBilling, sampleOutputs } from "../../shared/ops/launch.service.js";
 import Organization from "../../shared/models/organization.model.js";
 import Membership from "../../shared/models/membership.model.js";
 import EmailIntegration from "../../shared/models/emailIntegration.model.js";
@@ -234,6 +235,27 @@ router.post("/plans", requireAdmin, validate(z.object({
     const plan = await Plan.create({ ...req.body, version: (last?.version ?? 0) + 1, active: true });
     if (last) await Plan.updateMany({ key: req.body.key, version: { $lt: plan.version } }, { active: false });
     return Ok(res, "Plan version published", { plan });
+});
+
+/*
+    @route GET /api/admin/billing/reconciliation
+    @desc Subscriptions vs money received this period: active but unpaid, paid but not active, refunds
+*/
+router.get("/billing/reconciliation", async (req: Request, res: Response) => {
+    return Ok(res, "Reconciliation", await reconcileBilling());
+});
+
+/*
+    @route GET /api/admin/launch-dashboard?days=30
+    @desc Activation, sales outcomes, conversion, economics, reliability, retention and AI decision quality
+*/
+router.get("/launch-dashboard", async (req: Request, res: Response) => {
+    return Ok(res, "Launch dashboard", await launchDashboard(Math.min(180, Math.max(7, Number(req.query.days) || 30))));
+});
+
+// recent AI outputs for a human quality review (message bodies are tenant data: staff only, audited per view)
+router.get("/quality-sample", async (req: Request, res: Response) => {
+    return Ok(res, "Quality sample", await sampleOutputs(10));
 });
 
 export default router;

@@ -16,6 +16,7 @@ const Email = lazy(() => import('./app/Email'))
 const Campaigns = lazy(() => import('./app/Campaigns'))
 const Analytics = lazy(() => import('./app/Analytics'))
 const Billing = lazy(() => import('./app/Billing'))
+const Legal = lazy(() => import('./pages/Legal'))
 const Integrations = lazy(() => import('./app/Integrations'))
 const Experiments = lazy(() => import('./app/Analytics').then((m) => ({ default: m.Experiments })))
 const CampaignDetail = lazy(() => import('./app/Campaigns').then((m) => ({ default: m.CampaignDetail })))
@@ -47,6 +48,9 @@ export default function App() {
       <Suspense fallback={<div style={{ display: 'grid', placeItems: 'center', minHeight: '60vh' }}><Spinner /></div>}>
       <Routes>
         <Route path="/" element={<Landing />} />
+        <Route path="/help" element={<Legal />} />
+        <Route path="/terms" element={<Legal />} />
+        <Route path="/privacy" element={<Legal />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/verify" element={<Verify />} />

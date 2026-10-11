@@ -29,6 +29,19 @@ Copy `server/.env.example` and set at least:
 
 Keep secrets in your platform's secret manager, not in the image (`.dockerignore` excludes every `.env`).
 
+## Environments and release pipeline
+
+- **Environments:**
+  - `render.yaml` defines staging and production. Each has an API (which serves the app) and a worker, with health check `/api/health/ready`.
+  - Secrets are set per environment in Render, never in the repo or the client bundle (only `VITE_*` values reach the browser).
+  - Use separate databases, OAuth clients and billing secrets per environment.
+- **Pipeline** (`.github/workflows/release.yml`): CI passes (audit, typecheck, tests, evaluations, lint, build, image) → deploy staging → smoke tests (`server/scripts/smoke.ts`) → approval on the protected `production` environment → deploy production → smoke tests. Secrets needed: `RENDER_STAGING_DEPLOY_HOOK`, `RENDER_PRODUCTION_DEPLOY_HOOK`, `STAGING_URL`, `PRODUCTION_URL`.
+- **Migrations:**
+  - `node dist/migrate.js` runs as Render's `preDeployCommand`, so a failed migration blocks the release.
+  - Each migration runs once, is recorded in `migrations` and is locked against concurrent deploys.
+  - Production never builds indexes on boot; migration `001` does it.
+  - Migrations are additive, so the previous release keeps working on migrated data.
+
 ## Deploy
 1. CI on `main` must be green: audit, typecheck, tests, lint, build, image.
 2. Build and tag with the commit SHA: `docker build -t registry/easysales:<sha> .`

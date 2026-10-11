@@ -1,0 +1,75 @@
+# Render Blueprint: separate staging and production, each with an API (serves the app) and a worker.
+# Secrets are never in this file: they are set per environment in the Render dashboard (sync: false).
+# Migrations run before every deploy goes live (preDeployCommand); a failed migration blocks the release.
+# Auto-deploy is off: the GitHub "Release" workflow deploys staging, smoke-tests it, then (after approval) production.
+envVarGroups:
+  - name: easysales-staging
+    envVars:
+      - { key: NODE_ENV, value: production }
+      - { key: RUN_WORKER, value: "false" }
+      - { key: MONGO_URI, sync: false }
+      - { key: ACCESS_TOKEN_SECRET, sync: false }
+      - { key: REFRESH_TOKEN_SECRET, sync: false }
+      - { key: ENCRYPTION_KEY, sync: false }
+      - { key: CORS_ORIGIN, sync: false }
+      - { key: FRONTEND_URL, sync: false }
+      - { key: LLM_API_KEY, sync: false }
+      - { key: ADMIN_EMAILS, sync: false }
+      - { key: BILLING_WEBHOOK_SECRET, sync: false }
+      - { key: HUBSPOT_CLIENT_ID, sync: false }
+      - { key: HUBSPOT_CLIENT_SECRET, sync: false }
+      - { key: GOOGLE_CLIENT_ID, sync: false }
+      - { key: GOOGLE_CLIENT_SECRET, sync: false }
+      - { key: ALERT_WEBHOOK_URL, sync: false }
+  - name: easysales-production
+    envVars:
+      - { key: NODE_ENV, value: production }
+      - { key: RUN_WORKER, value: "false" }
+      - { key: MONGO_URI, sync: false }
+      - { key: ACCESS_TOKEN_SECRET, sync: false }
+      - { key: REFRESH_TOKEN_SECRET, sync: false }
+      - { key: ENCRYPTION_KEY, sync: false }
+      - { key: CORS_ORIGIN, sync: false }
+      - { key: FRONTEND_URL, sync: false }
+      - { key: LLM_API_KEY, sync: false }
+      - { key: ADMIN_EMAILS, sync: false }
+      - { key: SUPPORT_EMAILS, sync: false }
+      - { key: BILLING_WEBHOOK_SECRET, sync: false }
+      - { key: HUBSPOT_CLIENT_ID, sync: false }
+      - { key: HUBSPOT_CLIENT_SECRET, sync: false }
+      - { key: GOOGLE_CLIENT_ID, sync: false }
+      - { key: GOOGLE_CLIENT_SECRET, sync: false }
+      - { key: ALERT_WEBHOOK_URL, sync: false }
+
+services:
+  - type: web
+    name: easysales-staging
+    runtime: docker
+    plan: starter
+    autoDeploy: false
+    healthCheckPath: /api/health/ready
+    preDeployCommand: node dist/migrate.js
+    envVars: [{ fromGroup: easysales-staging }]
+  - type: worker
+    name: easysales-staging-worker
+    runtime: docker
+    plan: starter
+    autoDeploy: false
+    dockerCommand: node dist/worker.js
+    envVars: [{ fromGroup: easysales-staging }]
+
+  - type: web
+    name: easysales-production
+    runtime: docker
+    plan: standard
+    autoDeploy: false
+    healthCheckPath: /api/health/ready
+    preDeployCommand: node dist/migrate.js
+    envVars: [{ fromGroup: easysales-production }]
+  - type: worker
+    name: easysales-production-worker
+    runtime: docker
+    plan: standard
+    autoDeploy: false
+    dockerCommand: node dist/worker.js
+    envVars: [{ fromGroup: easysales-production }]

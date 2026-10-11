@@ -93,6 +93,7 @@ Each workspace connects its own sending account (SMTP) under **Settings → Emai
 - [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): environment, deploy, rollback, security
 - [docs/RUNBOOK.md](docs/RUNBOOK.md): release targets, controlled launch, alerts, incidents, support, restore and rollback drills
 - [docs/PILOT_REVIEW.md](docs/PILOT_REVIEW.md): what improved, what is unproven, and how to review the pilot
+- [docs/RELEASE_AUDIT.md](docs/RELEASE_AUDIT.md): all ten sprints, launch gates with evidence, release blockers and the launch decision
 
 ## API
 

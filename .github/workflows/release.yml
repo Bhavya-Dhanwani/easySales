@@ -1,0 +1,72 @@
+name: Release
+
+# Code change → CI checks → staging deploy → smoke tests → human approval → production → smoke tests.
+# Needs repository secrets: RENDER_STAGING_DEPLOY_HOOK, RENDER_PRODUCTION_DEPLOY_HOOK, STAGING_URL, PRODUCTION_URL
+# (optional SMOKE_TOKEN_STAGING / SMOKE_TOKEN_PRODUCTION). Protect the "production" environment with
+# required reviewers in GitHub settings: that is the release approval.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Deploy to staging (migrations run before it goes live)
+        env: { HOOK: "${{ secrets.RENDER_STAGING_DEPLOY_HOOK }}" }
+        run: |
+          if [ -z "$HOOK" ]; then echo "RENDER_STAGING_DEPLOY_HOOK not set; skipping deploy"; exit 0; fi
+          curl -fsS -X POST "$HOOK?ref=${{ github.event.workflow_run.head_sha || github.sha }}"
+      - name: Wait for the new release to be ready
+        env: { URL: "${{ secrets.STAGING_URL }}" }
+        run: |
+          if [ -z "$URL" ]; then echo "STAGING_URL not set; skipping"; exit 0; fi
+          sleep 60
+          for i in $(seq 1 30); do curl -fsS "$URL/api/health/ready" && exit 0; sleep 20; done; exit 1
+      - name: Smoke tests on staging
+        working-directory: server
+        env: { BASE_URL: "${{ secrets.STAGING_URL }}", SMOKE_TOKEN: "${{ secrets.SMOKE_TOKEN_STAGING }}" }
+        run: |
+          if [ -z "$BASE_URL" ]; then echo "STAGING_URL not set; skipping"; exit 0; fi
+          npm ci --ignore-scripts && npx tsx scripts/smoke.ts
+
+  production:
+    needs: staging
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Deploy to production
+        env: { HOOK: "${{ secrets.RENDER_PRODUCTION_DEPLOY_HOOK }}" }
+        run: |
+          if [ -z "$HOOK" ]; then echo "RENDER_PRODUCTION_DEPLOY_HOOK not set; skipping deploy"; exit 0; fi
+          curl -fsS -X POST "$HOOK?ref=${{ github.event.workflow_run.head_sha || github.sha }}"
+      - name: Smoke tests on production (failure = roll back in Render, see docs/RUNBOOK.md)
+        working-directory: server
+        env: { BASE_URL: "${{ secrets.PRODUCTION_URL }}", SMOKE_TOKEN: "${{ secrets.SMOKE_TOKEN_PRODUCTION }}" }
+        run: |
+          if [ -z "$BASE_URL" ]; then echo "PRODUCTION_URL not set; skipping"; exit 0; fi
+          sleep 60
+          for i in $(seq 1 30); do curl -fsS "$BASE_URL/api/health/ready" && break; sleep 20; done
+          npm ci --ignore-scripts && npx tsx scripts/smoke.ts

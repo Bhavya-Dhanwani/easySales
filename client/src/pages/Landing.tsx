@@ -203,7 +203,7 @@ Hi Priya, every page on your site says "call to book". We've built booking flows
       <footer className="end">
         <div className="end-row pad">
           <Link to={go} className="end-cta">Let the pipeline fill itself <span>→</span></Link>
-          <div className="end-links mono"><a href="#work">Product</a><a href="#process">Process</a><a href="#faq">FAQ</a><span>© {new Date().getFullYear()}</span></div>
+          <div className="end-links mono"><a href="#work">Product</a><a href="#process">Process</a><a href="#faq">FAQ</a><Link to="/help">Help</Link><Link to="/terms">Terms</Link><Link to="/privacy">Privacy</Link><span>© {new Date().getFullYear()}</span></div>
         </div>
         <div className="wordmark" aria-hidden="true">easySales</div>
       </footer>

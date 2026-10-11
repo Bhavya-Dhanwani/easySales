@@ -27,10 +27,21 @@ interface Capacity {
   database: { pingMs: number; poolMax: number | null }
   recommendations: string[]
 }
+interface Launch {
+  activation: { newWorkspaces: number; activated: number; setupCompletionRate: number | null; medianHoursToFirstEmail: number | null }
+  sales: { qualifiedOpportunities: number; proposalsSent: number; confirmedWins: number }
+  conversion: { positiveReplyRate: number | null; opportunityToProposalRate: number | null; winRate: number | null }
+  economics: { usageCostMinor: number; netRevenueMinor: number; costPerQualifiedOpportunityMinor: number | null; costPerWinMinor: number | null; grossMarginPercent: number | null }
+  reliability: { apiErrorRate: number; jobFailureRate: number | null; oldestQueuedSec: number; emailProvidersHealthy: number | null; integrationsHealthy: number | null }
+  retention: { activeWorkspaces: number; repeatUseWorkspaces: number; cancellations: number }
+  aiDecisions: { total: number; executedAutomatically: number; sentForApproval: number; blocked: number; escalated: number; approvedByHumans: number | null; rejectedByHumans: number | null }
+  definitions: Record<string, string>
+}
 interface OrgRow { id: string; name: string; industry?: string; activatedAt: string | null; plan: string | null; subscriptionStatus: string | null; periodEnd: string | null; email: string; members: number; failedJobs24h: number }
 interface EvalRun { _id: { runId: string; taskType: string; modelVersion: string; promptVersion: string; datasetVersion: string }; total: number; passed: number; at: string; failures: { id: string; category: string; detail?: string }[] }
 
 const FLAGS = ['live_email', 'auto_send', 'prototypes']
+const pctv = (v: number | null) => (v === null ? '—' : `${v}%`)
 
 // platform operators: health of the whole system, rollout switches and failed work
 export default function Ops() {
@@ -38,19 +49,21 @@ export default function Ops() {
   const toast = useToast()
   const [form, setForm] = useState({ key: 'live_email', organizationId: '', enabled: false, note: '' })
   const { data, reload } = useLoad(async () => {
-    const [metrics, flags, dead, capacity, evals, orgs] = await Promise.all([
+    const [metrics, flags, dead, capacity, evals, orgs, launch, recon] = await Promise.all([
       api<Metrics>('/admin/metrics/summary'),
       api<{ flags: Flag[]; defaults: Record<string, boolean> }>('/admin/feature-flags'),
       api<DeadLetters>('/admin/dead-letters'),
       api<Capacity>('/admin/analytics/worker-capacity'),
       api<{ runs: EvalRun[] }>('/admin/evaluations/results'),
       api<{ organizations: OrgRow[] }>('/admin/organizations'),
+      api<Launch>('/admin/launch-dashboard?days=30'),
+      api<{ issues: { organizationId: string; plan: string; status: string; expectedMinor: number; paidMinor: number; refundedMinor: number; issue: string }[] }>('/admin/billing/reconciliation'),
     ])
-    return { metrics, flags, dead, capacity, evals: evals.runs, orgs: orgs.organizations }
+    return { metrics, flags, dead, capacity, evals: evals.runs, orgs: orgs.organizations, launch, recon }
   }, [])
   if (!isPlatformAdmin && !isSupport) return <Empty title="Operators only.">Add your email to ADMIN_EMAILS (or SUPPORT_EMAILS for read-only) on the server to see this page.</Empty>
   if (!data) return <Spinner label="Loading operations" />
-  const { metrics: m, flags, dead, capacity: cap, evals, orgs } = data
+  const { metrics: m, flags, dead, capacity: cap, evals, orgs, launch: L, recon } = data
   const run = async (fn: () => Promise<unknown>, ok: string) => { try { await fn(); toast(ok); await reload() } catch (e) { toast((e as Error).message, true) } }
 
   return (
@@ -63,6 +76,33 @@ export default function Ops() {
         <Stat label="Model · 24 h" value={m.model24h.calls} hint={`${m.model24h.failed} failed · p95 ${(m.model24h.p95Ms / 1000).toFixed(1)} s`} />
         <Stat label="Spend · month" value={money(m.spendThisMonth.costMinor)} hint={m.costPerQualifiedOpportunityMinor === null ? 'no qualified opportunities yet' : `${money(m.costPerQualifiedOpportunityMinor)} per qualified opportunity`} />
       </div>
+
+      <section className="card stack">
+        <div className="row-flex between"><span className="h2">Launch dashboard · 30 days</span><span className="small muted">results from verified events, not activity</span></div>
+        <div className="grid-3">
+          {([
+            ['Activation', [['New workspaces', L.activation.newWorkspaces], ['Activated', L.activation.activated], ['Setup completion', pctv(L.activation.setupCompletionRate)], ['Hours to first email (median)', L.activation.medianHoursToFirstEmail ?? '—']]],
+            ['Sales', [['Qualified opportunities', L.sales.qualifiedOpportunities], ['Proposals sent', L.sales.proposalsSent], ['Confirmed wins', L.sales.confirmedWins]]],
+            ['Conversion', [['Positive reply rate', pctv(L.conversion.positiveReplyRate)], ['Opportunity → proposal', pctv(L.conversion.opportunityToProposalRate)], ['Win rate', pctv(L.conversion.winRate)]]],
+            ['Economics', [['Usage cost', money(L.economics.usageCostMinor)], ['Net revenue', money(L.economics.netRevenueMinor)], ['Cost / qualified opportunity', L.economics.costPerQualifiedOpportunityMinor === null ? '—' : money(L.economics.costPerQualifiedOpportunityMinor)], ['Cost / win', L.economics.costPerWinMinor === null ? '—' : money(L.economics.costPerWinMinor)], ['Gross margin', pctv(L.economics.grossMarginPercent)]]],
+            ['Reliability', [['API error rate', `${(L.reliability.apiErrorRate * 100).toFixed(1)}%`], ['Job failure rate', pctv(L.reliability.jobFailureRate)], ['Oldest queued job', `${Math.round(L.reliability.oldestQueuedSec / 60)} min`], ['Email accounts healthy', pctv(L.reliability.emailProvidersHealthy)], ['Integrations healthy', pctv(L.reliability.integrationsHealthy)]]],
+            ['Retention & AI', [['Active workspaces', L.retention.activeWorkspaces], ['Used 2+ weeks', L.retention.repeatUseWorkspaces], ['Cancellations', L.retention.cancellations], ['AI decisions (auto / approval / blocked)', `${L.aiDecisions.executedAutomatically} / ${L.aiDecisions.sentForApproval} / ${L.aiDecisions.blocked}`], ['Approvals rejected by humans', pctv(L.aiDecisions.rejectedByHumans)]]],
+          ] as [string, [string, string | number][]][]).map(([title, rows]) => (
+            <div key={title} className="card tight stack sm"><span className="label">{title}</span>{rows.map(([k, v]) => <div key={k} className="row-flex between small"><span>{k}</span><b className="mono">{v}</b></div>)}</div>
+          ))}
+        </div>
+        <span className="small muted">{Object.values(L.definitions).join(' · ')}</span>
+      </section>
+
+      <section className="card stack">
+        <span className="h2">Billing reconciliation</span>
+        {recon.issues.length === 0 ? <span className="small muted">Every active subscription is paid for this period.</span> : recon.issues.map((r) => (
+          <div key={r.organizationId} className="row-flex between small" style={{ borderTop: '1px solid var(--line)', paddingTop: 6 }}>
+            <span><span className="mono">{r.organizationId}</span> · {r.plan} · {r.status} · <b>{r.issue}</b></span>
+            <span className="mono">paid {money(r.paidMinor)} / expected {money(r.expectedMinor)}{r.refundedMinor ? ` · refunded ${money(r.refundedMinor)}` : ''}</span>
+          </div>
+        ))}
+      </section>
 
       <div className="grid-2">
         <section className="card stack">

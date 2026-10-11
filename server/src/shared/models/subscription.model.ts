@@ -57,3 +57,24 @@ const billingEventSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 export const BillingEvent = mongoose.model("BillingEvent", billingEventSchema);
+
+/*
+    A billing record (invoice paid, refund) as reported by the billing provider. This is the money
+    side; quotas are the usage side. Reconciliation compares the two.
+*/
+const billingRecordSchema = new mongoose.Schema({
+    ...tenantFields,
+    eventId: { type: String, required: true, unique: true },
+    kind: { type: String, enum: ["invoice", "refund"], required: true },
+    amountMinor: { type: Number, required: true },
+    currency: { type: String, required: true },
+    providerInvoiceId: String,
+    periodStart: Date,
+    periodEnd: Date,
+    planKey: String,
+}, { timestamps: true });
+
+billingRecordSchema.plugin(tenantPlugin);
+billingRecordSchema.index({ organizationId: 1, createdAt: -1 });
+
+export const BillingRecord = mongoose.model("BillingRecord", billingRecordSchema);

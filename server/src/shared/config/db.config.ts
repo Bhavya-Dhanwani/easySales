@@ -10,6 +10,8 @@ async function connectDB() {
 
         // connecting to the database
         mongoose.set("strictQuery", false);
+        // production builds indexes only through the migration step (npm run migrate), never on boot
+        if (env.NODE_ENV === "production") mongoose.set("autoIndex", false);
         await mongoose.connect(env.MONGO_URI);
         logger.info("Connected to the database");
 

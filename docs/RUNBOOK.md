@@ -77,9 +77,28 @@ Alerts go to the logs, the tenant's audit log (tenant alerts) and `ALERT_WEBHOOK
 - Look up the workspace's audit log (Audit log page or `GET /api/v1/audit-events`) and the request id from the browser's network tab (`X-Request-Id` header).
 - Data requests: export is `GET /api/v1/organization/export` (secrets excluded); deletion is the owner's "Delete organization" (removes every tenant collection).
 
+## Billing procedures
+
+- **Payments arrive only through the signed billing webhook** (`subscription.*`, `invoice.paid`, `payment.refunded`), or through an operator setting a plan (Operations → Workspaces → Set plan, audited). Never from the browser.
+- **Access and quota are separate:**
+  - **Overdue** (past due): a 7-day grace period, then read-only.
+  - **Cancelled:** works until the end of the paid period, then read-only.
+  - **Quota exhausted while paid:** research waits and emails are held (never dropped) until the next period or an upgrade.
+- **Reconciliation:** check Operations → Billing reconciliation weekly. "Active without full payment" means chase the payment or set the plan deliberately; "paid but cancelled" means check whether a refund is due.
+- **Refunds:** issued in the payment provider. The `payment.refunded` event records them here. A refund never changes access by itself; cancel or change the plan as agreed with the customer.
+
+## Support ownership
+
+| Area | Owner | Backup |
+|---|---|---|
+| Customer support inbox (`support@…`) | _name the owner before launch_ | |
+| Incidents (alerts, sev-1) | _on-call person_ | |
+| Billing and refunds | _owner_ | |
+
 ## Rollback
 
-- Redeploy the previous image tag (see DEPLOYMENT.md). Schema changes are additive, so the previous version runs on the current database.
+- Redeploy the previous image tag (Render: the service's deploy list → Rollback; or the previous commit through the Release workflow).
+- Migrations are not rolled back. They are additive, so the previous release keeps working (verified by the rollback drill). Never ship a destructive data change in the same release that stops using it. Schema changes are additive, so the previous version runs on the current database.
 - A bad policy: publish the previous values again (versions are immutable and listed in Autonomy & limits).
 - A bad flag change: Operations → remove the flag row (the default applies).
 
