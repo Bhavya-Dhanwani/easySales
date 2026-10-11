@@ -86,14 +86,15 @@ export default function LeadDetail() {
   const { data, loading, reload } = useLoad(
     () => api<LeadBundle>(`/v1/leads/${id}`),
     [id],
-    (d) => ['research_queued', 'researching'].includes(d.lead.status) || d.workflows.some((w) => w.status === 'queued' || w.status === 'running') || d.proposals.some((p) => p.status === 'generating') || d.messages.some((m) => m.status === 'queued' || m.status === 'sending'),
+    (d) => ['research_queued', 'researching'].includes(d.lead.status) || d.workflows.some((w) => w.type !== 'sales.evaluate' && (w.status === 'queued' || w.status === 'running')) || d.proposals.some((p) => p.status === 'generating') || d.messages.some((m) => m.status === 'queued' || m.status === 'sending'),
   )
 
   if (loading) return <Spinner label="Loading lead" />
   if (!data) return <Empty title="Lead not found." action={<Link className="btn" to="/app/leads">Back to leads</Link>} />
 
   const { lead, conversation, messages, workflows, approvals } = data
-  const active = workflows.find((w) => ['queued', 'running', 'waiting_approval'].includes(w.status))
+  // a next-best-action check scheduled for later is background work: it must not block the page
+  const active = workflows.find((w) => w.type !== 'sales.evaluate' && ['queued', 'running', 'waiting_approval'].includes(w.status))
   const latest = workflows[0]
 
   const act = async (fn: () => Promise<unknown>, ok: string) => {

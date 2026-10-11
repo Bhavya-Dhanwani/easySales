@@ -49,7 +49,7 @@ const SEND_LEASE_MS = 2 * 60_000;
 const QUIET_HOURS_RETRY_MS = 15 * 60_000;
 
 // errors that mean "do not retry, a human has to fix configuration"
-const PERMANENT_CODES = new Set(["LLM_NOT_CONFIGURED", "BUDGET_EXCEEDED", "RECONNECT_REQUIRED"]);
+const PERMANENT_CODES = new Set(["LLM_NOT_CONFIGURED", "LLM_AUTH_FAILED", "BUDGET_EXCEEDED", "RECONNECT_REQUIRED"]);
 
 type WorkflowDoc = InstanceType<typeof Workflow>;
 

@@ -66,6 +66,39 @@ const NOT_A_BUSINESS = ["justdial.com", "indiamart.com", "sulekha.com", "yelp.co
     "medium.com", "glassdoor.com", "indeed.com", "naukri.com", "amazon.in", "amazon.com", "flipkart.com", "clutch.co", "crunchbase.com", "lybrate.com", "magicpin.in"];
 const isDirectory = (domain: string) => NOT_A_BUSINESS.some((d) => domain === d || domain.endsWith(`.${d}`));
 
+// "Top 10 Dental Clinics in Pune", "15 best ...", "list of ...": articles about businesses, not a business
+const LISTICLE = /\btop\s*\d+\b|\b\d+\s+best\b|\blist of\b|\bdirectory\b|\b20\d\d edition\b/i;
+const SEO_WORDS = /\b(best|top|near me|no\.?\s?1|#1|leading|affordable|cheapest)\b/i;
+
+// longest run of characters two strings share ("jupiterhospitalpune" vs "jupiterhospital" -> 15)
+function sharedRun(a: string, b: string) {
+    let best = 0;
+    for (let i = 0; i < a.length; i++) for (let j = 0; j < b.length; j++) {
+        let k = 0;
+        while (a[i + k] && a[i + k] === b[j + k]) k++;
+        if (k > best) best = k;
+    }
+    return best;
+}
+
+/*
+    A page title is mostly SEO ("Best Dentist in Pune Near Me | Vanilla Smiles"). The business name is the
+    part that matches its own website (vanillasmiles.dental), never a slogan or "<what> in <where>";
+    else a name made from the domain (vanilla-smiles.in -> Vanilla Smiles).
+*/
+export function businessName(title: string, what: string, where: string, domain: string) {
+    const city = where.split(",")[0].trim().toLowerCase();
+    const label = domain.split(".")[0].toLowerCase().replace(/[^a-z0-9]/g, "");
+    const parts = title.split(/\s*[|–·:«»]\s*|\s+-\s*|\s*-\s+/).map((part) => part.trim()).filter((part) => part.length > 1);
+    const generic = (part: string) => SEO_WORDS.test(part) || (part.toLowerCase().includes(what.toLowerCase()) && part.toLowerCase().includes(city));
+    // most of the name must match the site's name: a shared common word ("dental", "hospital") is not enough
+    const matching = parts.filter((part) => !generic(part))
+        .map((part) => { const compact = part.toLowerCase().replace(/[^a-z0-9]/g, ""); return { part, run: sharedRun(compact, label), need: Math.max(5, 0.6 * Math.min(compact.length, label.length)) }; })
+        .filter((m) => m.run >= m.need)
+        .sort((x, y) => y.run - x.run)[0];
+    return matching?.part ?? domain.split(".")[0].replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 /*
     Tavily web search (free plan: 1,000 searches a month, no card). Turns on when TAVILY_API_KEY
     is set. Finds businesses that are on the web but not on the map; only their own sites are kept.
@@ -81,9 +114,9 @@ async function searchWeb(what: string, where: string): Promise<Candidate[]> {
     if (status < 200 || status >= 300) throw new Error(`Web search: HTTP ${status}`);
     return (data.results ?? []).flatMap((r) => {
         const site = domainOf(r.url);
-        if (!site || isDirectory(site.domain) || !clean(r.title)) return [];
-        // "Smile Dental Clinic | Best dentist in Pune" -> "Smile Dental Clinic"
-        return [{ name: clean(r.title!.split(/\s[|\-–:·]\s/)[0])!, website: site.website, domain: site.domain, source: "web" as const }];
+        const title = clean(r.title);
+        if (!site || !title || isDirectory(site.domain) || LISTICLE.test(title)) return [];
+        return [{ name: businessName(title, what, where, site.domain).slice(0, 200), website: site.website, domain: site.domain, source: "web" as const }];
     });
 }
 

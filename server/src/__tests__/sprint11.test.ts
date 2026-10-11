@@ -121,6 +121,8 @@ test("lead discovery: Tavily web search adds businesses not on the map; director
                 { title: "Smile Dental | Dentist in Pune", url: "https://smiledental.test/contact" },
                 { title: "Pearl Dental Studio | Dentist in Pune", url: "https://pearldental.test/about" },
                 { title: "Kids Dental Care - Pediatric dentist", url: "https://kidsdental.test/" },
+                { title: "Top 10 Dental Clinics In Pune (2026 Edition)", url: "https://someagency.test/blog/top-dentists" },
+                { title: "Best Dentist In Pune Near Me", url: "https://vanilla-smiles.test/" },
             ] });
         }
         return reply(200, [{ name: "Smile Dental", type: "dentist", extratags: { website: "https://smiledental.test", phone: "+91 20 1234 5678" } }]);
@@ -134,7 +136,7 @@ test("lead discovery: Tavily web search adds businesses not on the map; director
     const r = await request(app).post("/api/v1/leads/discover").set(owner.auth).send({ what: "Dentist", where: "Pune" });
     assert.equal(r.status, 200);
     const found = r.body.data.candidates.map((c: { name: string; source: string; phone?: string }) => [c.name, c.source, c.phone ?? null]);
-    assert.deepEqual(found, [["Smile Dental", "openstreetmap", "+91 20 1234 5678"], ["Kids Dental Care", "web", null]], "map entry wins the duplicate; directory and disqualified dropped");
+    assert.deepEqual(found, [["Smile Dental", "openstreetmap", "+91 20 1234 5678"], ["Kids Dental Care", "web", null], ["Vanilla Smiles", "web", null]], "map entry wins the duplicate; directory, list article and disqualified dropped; SEO title replaced by the site's name");
 
     // Tavily out of free searches: the map results still come back, the failure is shown
     tavilyDown = true;
@@ -174,6 +176,20 @@ test("daily lead finder: searches the niche by itself once a day, imports with t
     // once a day: running again the same day searches nothing
     await runLeadFinder();
     assert.equal(calls.length, 1);
+});
+
+test("web result names: the business, not the SEO slogan", async () => {
+    const { businessName } = await import("../shared/discovery/discovery.service.js");
+    assert.equal(businessName("Dentist In Pune Near Me | Vanilla Smiles Dental", "dentist", "Pune", "vanillasmiles.dental"), "Vanilla Smiles Dental");
+    assert.equal(businessName("Best Dentist in Pune and Pimpri Chinchwad", "dentist", "Pune", "pathakdentalclinic.com"), "Pathakdentalclinic");
+    assert.equal(businessName("Dr. Jain's Dental Care Clinic", "dentist", "Pune", "drjainsdentalcare.com"), "Dr. Jain's Dental Care Clinic");
+    assert.equal(businessName("Smile Dental | Dentist in Pune", "Dentist", "Pune, India", "smiledental.test"), "Smile Dental");
+    assert.equal(businessName("Dental Clinic in Pune- Vanilla Smiles", "dentist", "Pune", "vanillasmiles.dental"), "Vanilla Smiles");
+    assert.equal(businessName("Best Hospital in Pune | India | Jupiter Hospital", "dentist", "Pune", "jupiterhospital.com"), "Jupiter Hospital");
+    assert.equal(businessName("Dentistry « KEM Hospital", "dentist", "Pune", "kemhospitalpune.org"), "KEM Hospital");
+    assert.equal(businessName("Best Dentist In Pune Near Me", "dentist", "Pune", "sabkadentist.com"), "Sabkadentist", "a slogan sharing a common word is not the name");
+    assert.equal(businessName("Best Dental Care Hospital in Pune, Maharashtra", "dentist", "Pune", "jupiterhospital.com"), "Jupiterhospital");
+    assert.equal(businessName("Largest Dental Chain India | India", "dentist", "Pune", "gobest-dentist.com"), "Gobest Dentist", "no matching part: the site's name");
 });
 
 test("research finds a public contact email on the prospect's own site", () => {

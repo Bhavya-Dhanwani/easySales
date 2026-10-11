@@ -87,3 +87,13 @@ test("neatlogs: off without a key (no callbacks, plain passthrough) and metadata
     const span = stripContent({ "input.value": "prompt", "output.value": "out", "llm.input_messages.0.message.content": "hi", "llm.token_count.prompt": 12, "llm.model_name": "m", "metadata.organizationId": "o1" });
     assert.deepEqual(span, { "llm.token_count.prompt": 12, "llm.model_name": "m", "metadata.organizationId": "o1" });
 });
+
+test("AI provider errors: no key material reaches users, a rejected key is permanent", async () => {
+    const { providerError } = await import("../agents/llm.js");
+    const leaked = providerError({ status: 401, message: "401 Authentication Error, Invalid proxy server token passed. Received API Key = sk-...o7Tg, Key Hash (Token) =da5b31" });
+    assert.equal((leaked as { code?: string }).code, "LLM_AUTH_FAILED");
+    assert.doesNotMatch(leaked.message, /sk-|o7Tg|da5b31/);
+    assert.match(providerError({ status: 429, message: "slow down" }).message, /rate limiting/);
+    assert.match(providerError({ message: "fetch failed ECONNREFUSED" }).message, /could not be reached/);
+    assert.equal(providerError({ status: 500, message: "upstream says key=abc" }).message, "The AI provider returned an error (HTTP 500); it will be retried.");
+});

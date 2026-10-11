@@ -1,4 +1,5 @@
 // Importing modules
+import logger from "../shared/config/logger.config.js";
 import { neatlogsCallbacks } from "../shared/observability/neatlogs.js";
 import { ChatOpenAI } from "@langchain/openai";
 import { z, ZodTypeAny } from "zod";
@@ -34,6 +35,27 @@ export class LlmNotConfiguredError extends ApiError {
     }
 }
 
+export class LlmAuthError extends ApiError {
+    code = "LLM_AUTH_FAILED";
+    constructor() {
+        super(503, "The AI provider rejected the API key. Check LLM_API_KEY and LLM_BASE_URL in server/.env.");
+    }
+}
+
+/*
+    Provider errors are shown to users (workflow errors) and stored: keep the cause, drop the provider's
+    text, which can echo parts of the key or its hash. The full message stays in the server log only.
+*/
+export function providerError(error: unknown) {
+    const e = error as { status?: number; message?: string };
+    const message = String(e?.message ?? "");
+    logger.warn({ status: e?.status, error: message.slice(0, 500) }, "AI provider call failed");
+    if (e?.status === 401 || e?.status === 403 || /authenticat|invalid (api key|proxy server token)|incorrect api key/i.test(message)) return new LlmAuthError();
+    if (e?.status === 429) return new Error("The AI provider is rate limiting requests; it will be retried.");
+    if (/timeout|timed out|ECONNREFUSED|ENOTFOUND|fetch failed/i.test(message)) return new Error("The AI provider could not be reached; it will be retried.");
+    return new Error(`The AI provider returned an error${e?.status ? ` (HTTP ${e.status})` : ""}; it will be retried.`);
+}
+
 // LangChain-backed gateway for any OpenAI-compatible endpoint (LiteLLM, OpenAI, vLLM, ...)
 class LangChainGateway implements LlmGateway {
 
@@ -64,7 +86,7 @@ class LangChainGateway implements LlmGateway {
         const { raw, parsed } = await runnable.invoke([
             { role: "system", content: system },
             { role: "user", content: user },
-        ], { callbacks: neatlogsCallbacks() });
+        ], { callbacks: neatlogsCallbacks() }).catch((error: unknown) => { throw providerError(error); });
         if (!parsed) throw new Error(`${agent}: model returned no structured output`);
         const usage = (raw as { usage_metadata?: { input_tokens?: number; output_tokens?: number } }).usage_metadata;
         return {
