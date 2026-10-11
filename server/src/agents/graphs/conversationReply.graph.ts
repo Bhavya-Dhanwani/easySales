@@ -1,4 +1,5 @@
 // Importing modules
+import { recordStage } from "../../shared/analytics/analytics.service.js";
 import mongoose from "mongoose";
 import { Annotation, END, START, StateGraph, interrupt } from "@langchain/langgraph";
 import Lead from "../../shared/models/lead.model.js";
@@ -102,6 +103,9 @@ async function classify(s: S) {
     lead.outreachStatus = "replied";
     if (["interested", "meeting_request", "pricing_question", "objection"].includes(result.intent)) {
         if (["new", "qualified"].includes(lead.opportunityStage)) lead.opportunityStage = "discovery";
+        await recordStage(s.organizationId, lead._id, "positive_reply", { intent: result.intent });
+        // the business's bar for an opportunity: genuine interest from an ICP-qualified lead
+        if (lead.status === "qualified" && result.intent !== "objection") await recordStage(s.organizationId, lead._id, "qualified_opportunity", { via: result.intent });
         conversation.conversationState = result.intent === "meeting_request" ? "meeting_pending" : "engaged";
     }
 

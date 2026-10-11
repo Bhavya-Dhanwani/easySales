@@ -12,6 +12,7 @@ import researchRouter from "../../modules/private/research/research.router.js";
 import integrationsRouter from "../../modules/private/integrations/integrations.router.js";
 import campaignsRouter from "../../modules/private/campaigns/campaigns.router.js";
 import outreachRouter from "../../modules/private/outreach/outreach.router.js";
+import analyticsRouter from "../../modules/private/analytics/analytics.router.js";
 import opportunitiesRouter from "../../modules/private/opportunities/opportunities.router.js";
 import previewRouter from "../../modules/public/preview/preview.router.js";
 import adminRouter from "../../modules/admin/admin.router.js";
@@ -55,6 +56,7 @@ v1.use("/integrations", integrationsRouter);
 v1.use("/campaigns", campaignsRouter);
 v1.use("/", outreachRouter);
 v1.use("/", opportunitiesRouter);
+v1.use("/", analyticsRouter);
 router.use("/v1", v1);
 
 // exporting the router

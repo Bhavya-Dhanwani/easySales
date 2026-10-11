@@ -38,7 +38,7 @@ export async function draftOutreach(
     lead: { company: { name: string }; contact?: { name?: string | null; title?: string | null } | null },
     research: ResearchForDraft,
     profile: ProfileForPrompt,
-    opts: { followUpNumber?: number; previousSubject?: string; objective?: string } = {},
+    opts: { followUpNumber?: number; previousSubject?: string; objective?: string; variant?: { variable: string; instruction: string } } = {},
 ) {
 
     const isFollowUp = Boolean(opts.followUpNumber);
@@ -55,6 +55,7 @@ Writing rules:
 - Never state the prospect's problems as facts; possible needs are hypotheses ("might", "if").
 - No hype, no fake urgency, no flattery. Do not include a signature block or unsubscribe line (added automatically).
 ${opts.objective ? `- Campaign objective: ${opts.objective}` : ""}
+${opts.variant ? `- Approved experiment variant for the ${opts.variant.variable.replace(/_/g, " ")} (follow it exactly; all rules above still apply): ${opts.variant.instruction}` : ""}
 
 ${businessBrief(profile)}`,
         user: `Write to ${lead.contact?.name || "the team"}${lead.contact?.title ? ` (${lead.contact.title})` : ""} at ${lead.company.name}.

@@ -1,4 +1,5 @@
 // Importing modules
+import { recordStage } from "../shared/analytics/analytics.service.js";
 import os from "node:os";
 import { randomBytes } from "node:crypto";
 import mongoose from "mongoose";
@@ -47,11 +48,15 @@ type WorkflowDoc = InstanceType<typeof Workflow>;
 
 /* ----------------------------- workflows ----------------------------- */
 
+// WORKER_TYPES lets a process take only some job types, so e.g. demo builds scale on their own
+const TYPES = env.WORKER_TYPES.split(",").map((t) => t.trim()).filter(Boolean);
+
 async function leaseWorkflow() {
     return Workflow.findOneAndUpdate(
-        { status: "queued", nextRunAt: { $lte: new Date() } },
-        { $set: { status: "running", lockedBy: WORKER_ID, lockedUntil: new Date(Date.now() + WORKFLOW_LEASE_MS) }, $inc: { attempts: 1 } },
-        { sort: { nextRunAt: 1 }, new: true },
+        { status: "queued", nextRunAt: { $lte: new Date() }, ...(TYPES.length ? { type: { $in: TYPES } } : {}) },
+        { $set: { status: "running", lockedBy: WORKER_ID, lockedUntil: new Date(Date.now() + WORKFLOW_LEASE_MS), lastStartedAt: new Date() }, $inc: { attempts: 1 } },
+        // higher-priority (better-fit) work first, then oldest due
+        { sort: { priority: -1, nextRunAt: 1 }, new: true },
     ).setOptions({ crossTenant: true });
 }
 
@@ -143,8 +148,8 @@ async function executeWorkflow(wf: WorkflowDoc) {
                 : { status: "completed", resume: null, lockedUntil: null, currentStep: "done", result: { outcome: values.outcome ?? null } });
         } else if (wf.type === "lead.research") {
             await Workflow.updateOne(scope, { currentStep: "research" });
-            const r = await runResearch({ organizationId: wf.organizationId, leadId: wf.entityId, workflowId: wf._id.toString(), correlationId: wf.correlationId, requestedAt: wf.createdAt });
-            await Workflow.updateOne(scope, { status: "completed", lockedUntil: null, currentStep: "done", result: { outcome: r.stale ? "stale_result_discarded" : r.status } });
+            const r = await runResearch({ organizationId: wf.organizationId, leadId: wf.entityId, workflowId: wf._id.toString(), correlationId: wf.correlationId, requestedAt: wf.createdAt, force: Boolean(wf.input?.force) });
+            await Workflow.updateOne(scope, { status: "completed", lockedUntil: null, currentStep: "done", result: { outcome: r.stale ? "stale_result_discarded" : r.cached ? "rescored_from_fresh_research" : r.status } });
         } else if (wf.type === "proposal.generate") {
             await generateProposalBody(wf.organizationId.toString(), wf.entityId.toString(), wf._id.toString(), wf.correlationId);
             await Workflow.updateOne(scope, { status: "completed", lockedUntil: null, currentStep: "done", result: { outcome: "proposal_drafted" } });
@@ -253,9 +258,11 @@ async function dispatchMessage(msg: InstanceType<typeof Message>) {
         await Message.updateOne(scope, { status: "sent", sentAt: now, providerMessageId, lockedUntil: null, error: null });
         await recordOutboundSent(organizationId, msg, now);
         sendFailures.delete(String(organizationId));
-        await recordUsage(organizationId, { kind: "email", costMinor: env.EMAIL_COST_MINOR, provider: provider.name, refId: msg._id.toString() });
+        await recordUsage(organizationId, { kind: "email", costMinor: env.EMAIL_COST_MINOR, provider: provider.name, refId: msg._id.toString(), leadId: msg.leadId });
         await commit(organizationId, "email", env.EMAIL_COST_MINOR);
         await Lead.updateOne({ organizationId, _id: msg.leadId, outreachStatus: { $in: ["not_started", "eligible"] } }, { outreachStatus: "active" });
+        await recordStage(organizationId, msg.leadId, "contacted", { kind: msg.kind });
+        if (msg.proposalId) await recordStage(organizationId, msg.leadId, "proposal_sent", { proposalId: String(msg.proposalId) });
         if (msg.proposalId) await Proposal.updateOne({ organizationId, _id: msg.proposalId, status: "approved" }, { status: "sent", sentAt: new Date() });
         await audit({
             organizationId, actorType: "system", actorId: `email:${provider.name}`, action: "message.sent",
@@ -345,7 +352,9 @@ export async function runOnce({ maxWorkflows = 5, maxMessages = 20, force = fals
     for (let i = 0; i < maxWorkflows; i++) {
         const wf = await leaseWorkflow();
         if (!wf) break;
+        const started = Date.now();
         await executeWorkflow(wf);
+        await Workflow.updateOne({ organizationId: wf.organizationId, _id: wf._id, status: { $ne: "running" } }, { durationMs: Date.now() - started });
     }
     for (let i = 0; i < maxMessages; i++) {
         const msg = await leaseMessage();

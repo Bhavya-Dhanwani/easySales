@@ -1,7 +1,7 @@
 {
   "name": "clientpipe",
   "version": "1.0.0",
-  "description": "easySales API â€” multi-tenant AI business development agent",
+  "description": "easySales API \u00e2\u20ac\u201d multi-tenant AI business development agent",
   "main": "dist/server.js",
   "type": "module",
   "scripts": {
@@ -12,7 +12,8 @@
     "worker": "tsx watch worker.ts",
     "test": "node --import tsx --test --test-concurrency=1 \"src/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
-    "seed:demo": "tsx scripts/seed-demo.ts"
+    "seed:demo": "tsx scripts/seed-demo.ts",
+    "eval": "tsx scripts/eval.ts"
   },
   "dependencies": {
     "@langchain/core": "^1.2.17",

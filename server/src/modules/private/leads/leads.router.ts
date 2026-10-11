@@ -1,4 +1,5 @@
 // Importing modules
+import { recordDiscoveredImport, recordStage } from "../../../shared/analytics/analytics.service.js";
 import express, { Request, Response } from "express";
 import { z } from "zod";
 import mongoose from "mongoose";
@@ -118,6 +119,7 @@ router.post("/", authorize("leads.write"), validate(LeadInputSchema), async (req
     const doc = toLeadDoc(req.body, "manual");
     if (await Lead.exists({ organizationId: ctx.organizationId, dedupeKey: doc.dedupeKey })) throw new Conflict("This lead already exists");
     const lead = await Lead.create({ organizationId: ctx.organizationId, ...doc, ownerId: ctx.userId });
+    await recordStage(ctx.organizationId, lead._id, "discovered", { source: "manual" });
     await audit({ organizationId: ctx.organizationId, actorType: "user", actorId: ctx.userId, action: "lead.create", targetType: "lead", targetId: lead._id.toString(), outcome: "success" });
     return Created(res, "Lead created", { lead });
 });
@@ -186,6 +188,7 @@ router.post("/import", authorize("leads.write"), validate(z.object({
         }
     }
 
+    if (created) await recordDiscoveredImport(ctx.organizationId, job._id);
     rowErrors.sort((a, b) => a.row - b.row);
     const invalidRows = rowErrors.filter((e) => e.kind === "invalid").length;
     const duplicateRows = rowErrors.length - invalidRows;
@@ -271,6 +274,8 @@ router.post("/:id/research", authorize("workflows.run"), async (req: Request, re
         organizationId: ctx.organizationId, type: "lead.research", entityType: "lead", entityId: lead._id,
         idempotencyKey: key ? `client:${key}` : `research:${lead._id}:${new mongoose.Types.ObjectId()}`,
         startedBy: ctx.userId, actor: { type: "user", id: ctx.userId },
+        // ?force=true refreshes even when stored research is still fresh (otherwise it is re-scored for free)
+        input: { force: req.query.force === "true" },
     });
     await Lead.updateOne({ organizationId: ctx.organizationId, _id: lead._id, status: { $ne: "researching" } }, { status: "research_queued" });
     return ApiResponse(res, 202, "Research queued", { jobId: workflow._id, status: workflow.status, leadId: lead._id });

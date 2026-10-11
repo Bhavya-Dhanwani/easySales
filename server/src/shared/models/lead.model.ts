@@ -25,6 +25,8 @@ const criterionSchema = new mongoose.Schema({
     result: { type: String, enum: MATCH_RESULTS, required: true },
     explanation: String,
     evidenceUrls: [String],
+    // when the evidence behind this signal was observed (the research run)
+    observedAt: Date,
 }, { _id: false });
 
 const companySchema = new mongoose.Schema({
@@ -94,6 +96,15 @@ const leadSchema = new mongoose.Schema({
         profileVersion: Number,
         policyVersion: Number,
         overriddenBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        // score band from policy thresholds: drives ordering, never consent or approvals
+        priority: { type: String, enum: ["high", "medium", "low"] },
+    },
+
+    // the outreach experiment this lead was assigned to (once, so it never sees conflicting variants)
+    experiment: {
+        id: { type: mongoose.Schema.Types.ObjectId, ref: "Experiment" },
+        variantId: String,
+        assignedAt: Date,
     },
 
     outreachStatus: { type: String, enum: OUTREACH_STATUSES, default: "not_started" },
@@ -128,6 +139,7 @@ leadSchema.index({ organizationId: 1, status: 1, updatedAt: -1 });
 leadSchema.index({ organizationId: 1, "company.domain": 1 });
 leadSchema.index({ organizationId: 1, "contact.email": 1 });
 leadSchema.index({ organizationId: 1, opportunityStage: 1, updatedAt: -1 });
+leadSchema.index({ organizationId: 1, "qualification.priority": 1, "qualification.score": -1 });
 
 // the same normalization everywhere a lead is created
 export function leadDedupeKey(l: { contact?: { email?: string | null } | null; company: { domain?: string | null; name: string } }) {

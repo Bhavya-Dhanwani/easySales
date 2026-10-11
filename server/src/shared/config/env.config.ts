@@ -62,6 +62,9 @@ const envSchema = z.object({
     // per-workspace request limit on /api/v1, so one tenant cannot starve the others
     TENANT_RATE_LIMIT_PER_MIN: z.coerce.number().int().min(1).default(600),
 
+    // comma-separated workflow types this process works on (empty = all), e.g. "prototype.build"
+    WORKER_TYPES: z.string().default(""),
+
     // above this many due jobs the worker defers non-critical scheduling (follow-ups, campaign enrolment)
     QUEUE_BACKPRESSURE: z.coerce.number().int().min(1).default(500),
 

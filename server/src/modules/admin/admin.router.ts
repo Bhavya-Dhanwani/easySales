@@ -10,6 +10,9 @@ import authMiddleware from "../../shared/middlewares/auth.middleware.js";
 import validate from "../../shared/middlewares/validate.middleware.js";
 import { FLAG_DEFAULTS } from "../../shared/flags/flags.service.js";
 import { metricsSummary } from "../../shared/ops/ops.service.js";
+import { workerCapacity } from "../../shared/ops/capacity.service.js";
+import { runEvaluation } from "../../evals/evaluate.js";
+import ModelEvaluation from "../../shared/models/modelEvaluation.model.js";
 import { apiMetrics } from "../../shared/ops/requestContext.js";
 import { audit } from "../../shared/audit/audit.service.js";
 import env from "../../shared/config/env.config.js";
@@ -97,6 +100,35 @@ router.post("/workflows/:id/retry", async (req: Request, res: Response) => {
     if (!wf) throw new Conflict("Only failed workflows can be retried");
     await audit({ organizationId: wf.organizationId, actorType: "system", actorId: `admin:${actor(req)}`, action: "workflow.retry", targetType: "workflow", targetId: String(wf._id), outcome: "success" });
     return Ok(res, "Workflow requeued", { workflow: wf });
+});
+
+/*
+    @route GET /api/admin/analytics/worker-capacity
+    @desc Backlog, oldest job, run times and failures per job type, process and database health, scaling advice
+*/
+router.get("/analytics/worker-capacity", async (req: Request, res: Response) => {
+    return Ok(res, "Worker capacity", await workerCapacity());
+});
+
+/*
+    @route POST /api/admin/evaluations/run
+    @desc Run the versioned evaluation dataset (deterministic always; model tasks with { live: true })
+*/
+router.post("/evaluations/run", validate(z.object({ live: z.boolean().default(false) }).strict()), async (req: Request, res: Response) => {
+    return Ok(res, "Evaluation finished", await runEvaluation({ live: req.body.live }));
+});
+
+/*
+    @route GET /api/admin/evaluations/results
+    @desc Last runs with pass counts per task, model and prompt version
+*/
+router.get("/evaluations/results", async (req: Request, res: Response) => {
+    const runs = await ModelEvaluation.aggregate([
+        { $sort: { evaluatedAt: -1 } }, { $limit: 2000 },
+        { $group: { _id: { runId: "$runId", taskType: "$taskType", modelVersion: "$modelVersion", promptVersion: "$promptVersion", datasetVersion: "$datasetVersion" }, total: { $sum: 1 }, passed: { $sum: { $cond: ["$passed", 1, 0] } }, at: { $max: "$evaluatedAt" }, failures: { $push: { $cond: ["$passed", "$$REMOVE", { id: "$exampleId", category: "$failureCategory", detail: "$detail" }] } } } },
+        { $sort: { at: -1 } }, { $limit: 60 },
+    ]);
+    return Ok(res, "Evaluation results", { runs });
 });
 
 export default router;

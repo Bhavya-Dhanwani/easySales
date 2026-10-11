@@ -1,4 +1,5 @@
 // Importing modules
+import Lead from "../models/lead.model.js";
 import { randomUUID } from "node:crypto";
 import mongoose from "mongoose";
 import Workflow, { WORKFLOW_TYPES } from "../models/workflow.model.js";
@@ -28,10 +29,11 @@ export async function startWorkflow(req: StartWorkflow) {
     if (existing) return { workflow: existing, created: false };
 
     const { version } = await getCurrentPolicy(req.organizationId);
+    const band = req.entityType === "lead" ? (await Lead.findOne({ organizationId: req.organizationId, _id: req.entityId }, { "qualification.priority": 1 }).lean())?.qualification?.priority : undefined;
     try {
         const workflow = await Workflow.create({
             organizationId: req.organizationId, type: req.type, entityType: req.entityType, entityId: req.entityId,
-            input: req.input ?? {}, idempotencyKey: req.idempotencyKey, policyVersion: version,
+            input: req.input ?? {}, idempotencyKey: req.idempotencyKey, policyVersion: version, priority: band === "high" ? 2 : band === "medium" ? 1 : 0,
             startedBy: req.startedBy, correlationId: currentRequestId() ?? randomUUID(),
         });
         await audit({

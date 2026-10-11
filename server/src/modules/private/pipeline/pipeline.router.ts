@@ -1,4 +1,5 @@
 // Importing modules
+import { recordStage } from "../../../shared/analytics/analytics.service.js";
 import express, { Request, Response } from "express";
 import { z } from "zod";
 import mongoose from "mongoose";
@@ -234,7 +235,8 @@ router.patch("/proposals/:id", authorize("proposals.write"), validate(z.object({
         { status: req.body.status }, { new: true },
     ).lean();
     if (!proposal) throw new Conflict("Only sent proposals can be accepted or rejected");
-    await Lead.updateOne({ organizationId: ctx.organizationId, _id: proposal.leadId }, { opportunityStage: req.body.status === "accepted" ? "negotiation" : "lost" });
+    await Lead.updateOne({ organizationId: ctx.organizationId, _id: proposal.leadId }, { opportunityStage: "lost" });
+    await recordStage(ctx.organizationId, proposal.leadId, "lost", { proposalId: String(proposal._id) });
     await audit({ organizationId: ctx.organizationId, actorType: "user", actorId: ctx.userId, action: `proposal.${req.body.status}`, targetType: "proposal", targetId: proposal._id.toString(), outcome: "success" });
     return Ok(res, "Proposal updated", { proposal });
 });

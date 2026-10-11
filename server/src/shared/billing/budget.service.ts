@@ -1,4 +1,8 @@
 // Importing modules
+import Workflow from "../models/workflow.model.js";
+import Conversation from "../models/conversation.model.js";
+import Proposal from "../models/proposal.model.js";
+import Prototype from "../models/prototype.model.js";
 import mongoose from "mongoose";
 import { SpendCounter, BudgetReservation } from "../models/budget.model.js";
 import UsageRecord, { USAGE_KINDS } from "../models/usageRecord.model.js";
@@ -95,11 +99,24 @@ export async function commit(organizationId: Id, resource: string, amountMinor: 
 }
 
 // one immutable ledger row per metered unit of work
-export function recordUsage(organizationId: Id, row: {
+export async function recordUsage(organizationId: Id, row: {
     kind: (typeof USAGE_KINDS)[number]; quantity?: number; costMinor?: number; provider?: string; refId?: string;
-    agent?: string; model?: string; inputTokens?: number; outputTokens?: number; durationMs?: number; workflowId?: Id;
+    agent?: string; model?: string; inputTokens?: number; outputTokens?: number; durationMs?: number; workflowId?: Id; leadId?: Id;
 }) {
-    return UsageRecord.create({ organizationId, ...row });
+    const leadId = row.leadId ?? (row.workflowId ? await leadOfWorkflow(organizationId, row.workflowId) : undefined);
+    return UsageRecord.create({ organizationId, ...row, leadId });
+}
+
+// every cost belongs to an opportunity: follow the workflow to its lead
+async function leadOfWorkflow(organizationId: Id, workflowId: Id) {
+    const wf = await Workflow.findOne({ organizationId, _id: workflowId }, { entityType: 1, entityId: 1 }).lean();
+    if (!wf) return undefined;
+    if (wf.entityType === "lead") return wf.entityId;
+    const q = { organizationId, _id: wf.entityId };
+    const doc: { leadId?: unknown; opportunityId?: unknown } | null = wf.entityType === "conversation" ? await Conversation.findOne(q, { leadId: 1 }).lean()
+        : wf.entityType === "proposal" ? await Proposal.findOne(q, { leadId: 1 }).lean()
+            : await Prototype.findOne(q, { opportunityId: 1 }).lean();
+    return (doc?.leadId ?? doc?.opportunityId) as Id | undefined;
 }
 
 // housekeeping: reservations of crashed work go back to the pool

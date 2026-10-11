@@ -30,6 +30,10 @@ const messageSchema = new mongoose.Schema({
 
     body: { type: String, required: true, maxlength: 20000 },
 
+    // outreach experiment variant that shaped this message, if any
+    experimentId: { type: mongoose.Schema.Types.ObjectId, ref: "Experiment" },
+    variantId: String,
+
     status: { type: String, enum: MESSAGE_STATUSES, required: true },
 
     // AI classification for inbound messages

@@ -36,6 +36,14 @@ const workflowSchema = new mongoose.Schema({
 
     nextRunAt: { type: Date, default: Date.now },
 
+    // higher runs first among due jobs (lead score band for lead work)
+    priority: { type: Number, default: 0 },
+
+    lastStartedAt: Date,
+
+    // run time of the last attempt, for capacity planning
+    durationMs: Number,
+
     attempts: { type: Number, default: 0 },
 
     maxAttempts: { type: Number, default: 3 },
@@ -60,6 +68,7 @@ const workflowSchema = new mongoose.Schema({
 workflowSchema.plugin(tenantPlugin);
 workflowSchema.index({ organizationId: 1, idempotencyKey: 1 }, { unique: true });
 workflowSchema.index({ status: 1, nextRunAt: 1 });
+workflowSchema.index({ status: 1, priority: -1, nextRunAt: 1 });
 workflowSchema.index({ organizationId: 1, entityId: 1, createdAt: -1 });
 
 const Workflow = mongoose.model("Workflow", workflowSchema);

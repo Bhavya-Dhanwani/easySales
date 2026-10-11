@@ -26,6 +26,11 @@ export const PolicyConfigSchema = z.object({
         minimumScore: z.number().int().min(0).max(100),
         minimumEvidenceCoverage: z.number().int().min(0).max(100).default(60),
         reviewScore: z.number().int().min(0).max(100).default(50),
+        // score bands: >= high is prioritised, >= medium is worked after, below waits
+        highPriorityScore: z.number().int().min(0).max(100).default(80),
+        mediumPriorityScore: z.number().int().min(0).max(100).default(60),
+        // stored research younger than this (same profile version) is reused instead of paying for a new run
+        researchFreshDays: z.number().int().min(0).max(365).default(30),
     }),
     pricing: z.object({
         currency: z.string().length(3),
@@ -82,7 +87,7 @@ export const DEFAULT_POLICY: PolicyConfig = {
         minimumFollowUpIntervalHours: 72,
         quietHours: { enabled: true, start: "19:00", end: "09:00", timezone: "Asia/Kolkata" },
     },
-    qualification: { minimumScore: 70, minimumEvidenceCoverage: 60, reviewScore: 50 },
+    qualification: { minimumScore: 70, minimumEvidenceCoverage: 60, reviewScore: 50, highPriorityScore: 80, mediumPriorityScore: 60, researchFreshDays: 30 },
     pricing: { currency: "INR", minimumDealValueMinor: 25000_00, maximumDiscountPercent: 10, maximumDealValueMinor: 10_00_000_00, taxBasisPoints: 0, proposalValidityDays: 30 },
     proposals: { autoSend: false },
     budgets: { maxLlmCallsPerDay: 500, monthlySpendMinor: 10_000_00, maxResearchPerDay: 200, maxConcurrentResearch: 3, maxConcurrentBuilds: 1, artifactStorageBytes: 20_000_000 },

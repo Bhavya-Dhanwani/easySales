@@ -1,4 +1,5 @@
 // Importing modules
+import { recordStage } from "../../../shared/analytics/analytics.service.js";
 import express, { Request, Response } from "express";
 import { z } from "zod";
 import Lead from "../../../shared/models/lead.model.js";
@@ -101,6 +102,7 @@ router.post("/opportunities/:id/handoff", authorize("proposals.write"),
                 { organizationId: org, _id: lead._id, "handoff.at": { $exists: false } },
                 { opportunityStage: "won", handoff: { proposalId: accepted._id, at: new Date(), by: ctx.userId, notes: req.body.notes } },
             );
+            await recordStage(org, lead._id, "won", { proposalId: String(accepted._id), totalMinor: accepted.totalMinor });
             await audit({ organizationId: org, actorType: "user", actorId: ctx.userId, action: "deal.handoff", targetType: "lead", targetId: String(lead._id), outcome: "success", metadata: { proposalId: String(accepted._id), totalMinor: accepted.totalMinor } });
         }
         const [fresh, requirements, demo] = await Promise.all([

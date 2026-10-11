@@ -1,4 +1,5 @@
 // Importing modules
+import { recordStage } from "../analytics/analytics.service.js";
 import mongoose from "mongoose";
 import Requirements from "../models/requirements.model.js";
 import Lead from "../models/lead.model.js";
@@ -49,6 +50,7 @@ export async function saveRequirementsVersion(organizationId: Id, opportunityId:
                 organizationId, opportunityId, version: (latest?.version ?? 0) + 1,
                 requirements: parsed, sourceMessageIds: sources, createdBy, changeSummary,
             });
+            await recordStage(organizationId, opportunityId, "qualified_opportunity", { via: "requirements" });
             await audit({
                 organizationId, actorType: createdBy.startsWith("user:") ? "user" : "agent", actorId: createdBy.split(":")[1] ?? createdBy,
                 action: "requirements.version", targetType: "lead", targetId: String(opportunityId), outcome: "success",

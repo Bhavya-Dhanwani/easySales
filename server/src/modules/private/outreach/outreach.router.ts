@@ -1,4 +1,5 @@
 // Importing modules
+import { variantFor } from "../../../shared/experiments/experiment.service.js";
 import express, { Request, Response } from "express";
 import { z } from "zod";
 import mongoose from "mongoose";
@@ -37,8 +38,9 @@ router.post("/leads/:id/outreach-drafts", authorize("conversations.write"), asyn
     if (!lead.contact?.email) throw new BadRequest("Lead has no contact email");
     const conversation = await ensureConversation(String(ctx.organizationId), lead._id);
     const first = !(await Message.exists({ organizationId: ctx.organizationId, conversationId: conversation._id, direction: "outbound", status: { $nin: ["draft", "rejected"] } }));
+    const variant = first ? await variantFor(ctx.organizationId, lead._id) : null;
     const email = await draftOutreach({ organizationId: ctx.organizationId }, lead, lead.research ?? {}, await loadProfile(String(ctx.organizationId)),
-        first ? {} : { followUpNumber: conversation.followUpsSent + 1, previousSubject: conversation.subject ?? undefined });
+        first ? { variant: variant ?? undefined } : { followUpNumber: conversation.followUpsSent + 1, previousSubject: conversation.subject ?? undefined });
     if (!conversation.subject) {
         conversation.subject = email.subject;
         await conversation.save();
@@ -47,6 +49,7 @@ router.post("/leads/:id/outreach-drafts", authorize("conversations.write"), asyn
         organizationId: ctx.organizationId, conversationId: conversation._id, leadId: lead._id, direction: "outbound",
         kind: first ? "outreach" : "follow_up", to: lead.contact.email, subject: email.subject, body: email.body,
         status: "draft", claims: email.claims, idempotencyKey: `draft:${new mongoose.Types.ObjectId()}`,
+        experimentId: variant?.experimentId, variantId: variant?.variantId,
     });
     await audit({ organizationId: ctx.organizationId, actorType: "user", actorId: ctx.userId, action: "outreach.draft", targetType: "message", targetId: String(draft._id), outcome: "success", metadata: { unverifiedClaims: email.claims.filter((c) => !c.verified).length } });
     return Created(res, "Draft ready", { draft });

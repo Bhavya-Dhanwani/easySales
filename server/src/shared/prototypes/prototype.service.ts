@@ -221,7 +221,7 @@ export async function buildPrototype(organizationId: Id, prototypeId: Id, workfl
         );
         if (!charged) return { outcome: "cancelled" };
         p = charged;
-        await recordUsage(organizationId, { kind: "prototype", costMinor: perAttempt, provider: p.templateId, refId: String(prototypeId), workflowId });
+        await recordUsage(organizationId, { kind: "prototype", costMinor: perAttempt, provider: p.templateId, refId: String(prototypeId), workflowId, leadId: p.opportunityId });
 
         let content: PrototypeContent;
         try {

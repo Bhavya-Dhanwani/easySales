@@ -40,6 +40,8 @@ export interface OutboundRequest {
     references?: string[];
     // personalisation claims with their evidence check (from the outreach agent)
     claims?: { claim: string; evidenceUrl?: string; verified: boolean }[];
+    experimentId?: Id;
+    variantId?: string;
 }
 
 export interface OutboundResult {
@@ -128,6 +130,7 @@ export async function proposeOutbound(req: OutboundRequest): Promise<OutboundRes
         direction: "outbound", kind: req.kind, to, subject: req.subject, body: req.body,
         status, idempotencyKey: req.idempotencyKey, campaignId: req.campaignId,
         inReplyTo: req.inReplyTo, references: req.references, claims: req.claims ?? existing?.claims,
+        experimentId: req.experimentId ?? existing?.experimentId, variantId: req.variantId ?? existing?.variantId,
         error: status === "rejected" ? result.reasons.join("; ") : undefined,
     };
     const message = existing

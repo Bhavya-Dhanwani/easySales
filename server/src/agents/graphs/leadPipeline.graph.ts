@@ -1,4 +1,5 @@
 // Importing modules
+import { variantFor } from "../../shared/experiments/experiment.service.js";
 import mongoose from "mongoose";
 import { Annotation, END, START, StateGraph, interrupt } from "@langchain/langgraph";
 import Lead from "../../shared/models/lead.model.js";
@@ -59,7 +60,8 @@ async function draft(s: S) {
     const profile = await loadProfile(s.organizationId);
     const campaign = s.campaignId ? await Campaign.findOne({ organizationId: s.organizationId, _id: s.campaignId }).lean() : null;
     if (campaign && campaign.status !== "active") return { sendStatus: "rejected", outcome: "campaign_not_active" };
-    const email = await draftOutreach(ctxOf(s), lead, lead.research ?? {}, profile, { objective: campaign?.objective || undefined });
+    const variant = await variantFor(s.organizationId, lead._id, campaign?._id);
+    const email = await draftOutreach(ctxOf(s), lead, lead.research ?? {}, profile, { objective: campaign?.objective || undefined, variant: variant ?? undefined });
     const conversation = await ensureConversation(s.organizationId, lead._id);
     if (!conversation.subject) conversation.subject = email.subject;
     if (campaign && !conversation.campaignId) conversation.campaignId = campaign._id;
@@ -72,6 +74,7 @@ async function draft(s: S) {
         workflowId: new mongoose.Types.ObjectId(s.workflowId),
         correlationId: s.correlationId, actor: { type: "agent", id: "outreach" },
         campaignId: campaign?._id, claims: email.claims,
+        experimentId: variant?.experimentId, variantId: variant?.variantId,
     });
 
     return {

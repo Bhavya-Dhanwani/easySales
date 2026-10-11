@@ -23,8 +23,8 @@ function record(ms: number, status: number) {
     b.count += 1;
     if (status >= 500) b.errors += 1;
     if (b.ms.length < 5000) b.ms.push(ms);
+    if (!minutes.has(m)) for (const k of minutes.keys()) if (k < m - WINDOW_MIN) minutes.delete(k);
     minutes.set(m, b);
-    for (const k of minutes.keys()) if (k < m - WINDOW_MIN) minutes.delete(k);
 }
 
 const pct = (xs: number[], p: number) => {
@@ -44,6 +44,14 @@ export function apiMetrics(windowMin = 5) {
 
 export const resetApiMetrics = () => minutes.clear();
 
+function counts5m() {
+    const now = Math.floor(Date.now() / 60_000);
+    let requests = 0;
+    let errors = 0;
+    for (const [k, b] of minutes) if (k > now - 5) { requests += b.count; errors += b.errors; }
+    return { requests, errors };
+}
+
 /*
     Gives every request an id (accepting a sane X-Request-Id from a proxy), returns it in
     the response, and writes one structured log line per request: no bodies, no headers.
@@ -62,9 +70,11 @@ export function requestContext(req: Request, res: Response, next: NextFunction) 
             requestId, method: req.method, path: req.originalUrl.split("?")[0], status: res.statusCode, ms: Math.round(ms),
             organizationId: ctx?.organizationId ? String(ctx.organizationId) : undefined, userId: ctx?.userId,
         }, "http");
-        // sustained 5xx: at least 20 requests in 5 minutes and over 10% failing
-        const m = apiMetrics(5);
-        if (m.requests >= 20 && m.errorRate > 0.1) void alert(null, "api_errors", `API error rate ${(m.errorRate * 100).toFixed(1)}% over the last 5 minutes (${m.errors}/${m.requests})`);
+        // sustained 5xx: at least 20 requests in 5 minutes and over 10% failing (counters only: this runs on every request)
+        if (res.statusCode >= 500) {
+            const { requests, errors } = counts5m();
+            if (requests >= 20 && errors / requests > 0.1) void alert(null, "api_errors", `API error rate ${((errors / requests) * 100).toFixed(1)}% over the last 5 minutes (${errors}/${requests})`);
+        }
     });
     store.run({ requestId }, next);
 }

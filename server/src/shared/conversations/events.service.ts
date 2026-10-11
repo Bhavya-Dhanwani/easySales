@@ -1,4 +1,5 @@
 // Importing modules
+import { recordStage } from "../analytics/analytics.service.js";
 import mongoose from "mongoose";
 import ProviderEvent from "../models/providerEvent.model.js";
 import Message from "../models/message.model.js";
@@ -55,6 +56,7 @@ export async function processProviderEvent(evt: Evt): Promise<"processed" | "ign
 
     if (evt.type === "delivered") {
         await Message.updateOne({ organizationId, _id: msg._id, status: { $in: ["sent", "uncertain"] } }, { status: "delivered", deliveredAt: evt.occurredAt, error: null });
+        await recordStage(organizationId, msg.leadId, "delivered");
         return "processed";
     }
 

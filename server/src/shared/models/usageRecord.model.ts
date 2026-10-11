@@ -22,6 +22,9 @@ const usageRecordSchema = new mongoose.Schema({
     // the lead, prototype or message this was spent on
     refId: String,
 
+    // the opportunity the cost is attributed to (resolved from the workflow when not given)
+    leadId: { type: mongoose.Schema.Types.ObjectId, ref: "Lead" },
+
     agent: String,
 
     model: String,
@@ -39,6 +42,7 @@ const usageRecordSchema = new mongoose.Schema({
 usageRecordSchema.plugin(tenantPlugin);
 usageRecordSchema.index({ organizationId: 1, createdAt: -1 });
 usageRecordSchema.index({ organizationId: 1, kind: 1, createdAt: -1 });
+usageRecordSchema.index({ organizationId: 1, leadId: 1 });
 
 // financial records: append-only for application code (retention never deletes them)
 for (const op of ["updateOne", "updateMany", "findOneAndUpdate", "replaceOne", "deleteOne", "deleteMany", "findOneAndDelete"] as const) {
