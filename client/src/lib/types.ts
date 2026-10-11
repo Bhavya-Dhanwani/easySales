@@ -56,7 +56,7 @@ export interface Lead {
   consent?: { basis: string; source?: string }
   status: LeadStatus
   research?: { status: string; summary?: string; needs?: string[]; evidence?: Evidence[]; sources?: string[]; conflicts?: string[]; researchedAt?: string; profileVersion?: number }
-  qualification?: { score?: number; evidenceCoverage?: number; rationale?: string; flags?: string[]; criteria?: Criterion[]; evaluatedAt?: string; profileVersion?: number; overriddenBy?: string }
+  qualification?: { priority?: "high" | "medium" | "low"; score?: number; evidenceCoverage?: number; rationale?: string; flags?: string[]; criteria?: Criterion[]; evaluatedAt?: string; profileVersion?: number; overriddenBy?: string }
   outreachStatus: string
   opportunityStage: Stage
   requirements?: { needs?: string[]; budget?: string; timeline?: string }

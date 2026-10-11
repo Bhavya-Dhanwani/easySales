@@ -12,7 +12,7 @@ For whoever is on call for easySales during the pilot. Keep it short and current
 | Spend per qualified opportunity | set per pilot (start at ₹150) | `GET /api/v1/organization/usage` → `costPerQualifiedMinor` |
 | Tenant monthly spend | `budgets.monthlySpendMinor` | enforced by reservations; `budget_exhausted`, `abnormal_spend` alerts |
 
-Last local run (dev build, 20 concurrent clients, 15 s per path): health p95 88 ms, leads list p95 151 ms, dashboard p95 230 ms, 0 errors.
+**Production build, local MongoDB, 20 concurrent clients, 20 s per path (2026-10-11, after the Sprint 6 fix):** liveness 3,317 req/s p95 9 ms · leads list 467 req/s p95 70 ms · dashboard 218 req/s p95 117 ms · 0 errors. All targets met. Before the fix: 331 / 106 / 80 req/s (see PILOT_REVIEW.md). Repeat against staging before the pilot with the same command.
 
 ## Controlled launch
 
@@ -67,6 +67,15 @@ Alerts go to the logs, the tenant's audit log (tenant alerts) and `ALERT_WEBHOOK
 3. Check: log in as a pilot user, leads/conversations/proposals present, `/api/health/ready` = 200, `GET /api/v1/organization/export` completes.
 4. Record restore time and snapshot age here. Delete the restored cluster.
 
-| Date | Snapshot age | Restore time | Result |
+| Date | Where | Restore time | Result |
 |---|---|---|---|
-| _not yet run_ | | | |
+| 2026-10-11 | local MongoDB 7: `mongodump --archive --gzip` → `mongorestore --nsFrom easysales.* --nsTo easysales_restore.*` | 1 s (small dataset) | 26/26 collections and identical document counts. The production build started on the restored DB: `/health/ready` 200, login and lead list OK |
+| _pending_ | Atlas snapshot → new cluster | | repeat once on the real cluster before the pilot |
+
+## Rollback drill
+
+| Date | What | Result |
+|---|---|---|
+| 2026-10-11 | Previous release (Sprint 4, `fae4ca6`) built and started against the database written by Sprint 5 | Started cleanly. Login, leads, dashboard, usage, policies and an opportunity workspace all returned 200. Only `/api/health/ready` was missing (it did not exist yet). Rolling back one release is safe because schema changes are additive |
+
+Rule for every release: new fields are optional with defaults, nothing is renamed or removed in the same release, and policy keys are only added inside existing objects (the previous version validates stored policies strictly at the top level).

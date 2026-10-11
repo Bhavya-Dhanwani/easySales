@@ -17,6 +17,8 @@ Copy `server/.env.example` and set at least:
 | `BILLING_CURRENCY`, `LLM_COST_INPUT_PER_MTOK_MINOR`, `LLM_COST_OUTPUT_PER_MTOK_MINOR`, `EMAIL_COST_MINOR` | unit prices used to meter spend (set them to your real provider prices) |
 | `GLOBAL_DAILY_SPEND_CAP_MINOR` | optional emergency cap on total daily spend across all tenants |
 | `API_RATE_LIMIT_PER_MIN`, `TENANT_RATE_LIMIT_PER_MIN`, `QUEUE_BACKPRESSURE` | per-IP and per-workspace request limits; queue depth above which follow-ups and campaign enrolment wait |
+| `WORKER_TYPES` | optional; comma-separated job types a worker process takes (e.g. `prototype.build`), so one workload can scale on its own. Empty means all |
+| `APP_VERSION` | optional; recorded on funnel events as the workflow version (defaults to the package version) |
 | `ALERT_WEBHOOK_URL` | optional; Slack or Discord incoming webhook |
 | `RUN_WORKER` | `false` on API instances when you run a separate worker |
 

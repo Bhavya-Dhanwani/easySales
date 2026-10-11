@@ -11,6 +11,8 @@ const NAV: { group: string; items: { to: string; label: string; end?: boolean }[
     { to: '/app/leads', label: 'Lead pipeline' },
     { to: '/app/research', label: 'Research activity' },
     { to: '/app/campaigns', label: 'Campaigns' },
+    { to: '/app/experiments', label: 'Experiments' },
+    { to: '/app/analytics', label: 'Analytics' },
     { to: '/app/inbox', label: 'Inbox' },
     { to: '/app/review', label: 'Review queue' },
     { to: '/app/runs', label: 'Agent runs' },

@@ -26,6 +26,7 @@ jobs:
       - run: npm run typecheck
       # unit + integration tests run against an in-memory MongoDB with a fake LLM
       - run: npm test
+      - run: npm run eval
 
   client:
     runs-on: ubuntu-latest

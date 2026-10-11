@@ -155,7 +155,7 @@ export default function Leads() {
                   </td>
                   <td><Link to={`/app/leads/${l._id}`} style={{ textDecoration: 'none', fontWeight: 600 }}>{l.company.name}</Link><div className="small muted">{l.contact?.name ?? l.company.domain}</div></td>
                   <td className="small">{l.company.industry ?? <span className="muted">—</span>}<div className="muted">{l.company.country}</div></td>
-                  <td><FitCell score={l.qualification?.score} coverage={l.qualification?.evidenceCoverage} /></td>
+                  <td><FitCell score={l.qualification?.score} coverage={l.qualification?.evidenceCoverage} />{l.qualification?.priority === 'high' && <span className="badge ok plain" style={{ marginLeft: 6 }} title="High-priority band">priority</span>}</td>
                   <td>{l.status === 'researching' ? <span className="row-flex small" style={{ gap: 6 }}><span className="spinner" /> researching</span> : <Badge status={l.status} />}</td>
                   <td><Badge status={l.opportunityStage} /></td>
                   <td className="small muted">{ago(l.updatedAt)}</td>

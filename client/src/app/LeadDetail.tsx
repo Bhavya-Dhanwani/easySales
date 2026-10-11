@@ -107,7 +107,7 @@ export default function LeadDetail() {
           onChange={(e) => act(() => api(`/v1/leads/${lead._id}`, { method: 'PATCH', body: { opportunityStage: e.target.value } }), 'Stage updated')}>
           {STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
-        <button className="btn ghost" disabled={Boolean(active)} onClick={() => act(() => api(`/v1/leads/${lead._id}/research`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey() } }), 'Research queued')}>
+        <button className="btn ghost" disabled={Boolean(active)} onClick={() => act(() => api(`/v1/leads/${lead._id}/research${lead.research?.status === 'done' ? '?force=true' : ''}`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey() } }), 'Research queued')}>
           {lead.research?.status === 'done' ? 'Refresh research' : 'Research'}
         </button>
         <button className="btn lime" disabled={Boolean(active)} onClick={() => act(() => api(`/v1/leads/${lead._id}/run`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey() } }), 'Agents started')}>

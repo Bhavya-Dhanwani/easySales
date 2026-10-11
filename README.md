@@ -23,6 +23,7 @@ proposal ─► price book + tax + payment schedule (code) ─► Proposal agent
 - **Outbox**: messages are committed before sending, re-checked against policy at send time, and never blindly retried when the outcome is uncertain.
 - **Worker** (`server/src/jobs/worker.ts`): Mongo-leased job queue with stale-lease recovery and exponential backoff. It runs in-process or as its own process (`npm run worker`).
 - **Budgets & metering**: every AI call, email and demo build is written to an append-only usage ledger. Money is reserved on an atomic per-tenant counter before work starts and settled with the real cost after, so parallel workers cannot overshoot a limit. Feature flags (`live_email`, `auto_send`, `prototypes`) stage the launch per tenant.
+- **Conversion**: every lead's first arrival at each funnel stage is an event. Cohort funnels, cost per opportunity and stage, score-band outcomes and controlled outreach experiments are all computed from those events. A versioned evaluation dataset guards scoring, pricing, guardrails and model behaviour (`npm run eval`, also in CI).
 - **Operations**: request ids flow into workflow correlation ids and structured logs (secrets redacted); readiness checks; alerts for provider outages, stalled queues, API errors, abnormal spend and failed scheduled tasks; an operators' console for metrics, flags and dead letters.
 - **Multi-tenancy**: every tenant-owned model uses a plugin that refuses any query without `organizationId`. Org context and roles are resolved server-side from memberships. Audit events are append-only.
 
@@ -84,7 +85,8 @@ Each workspace connects its own sending account (SMTP) under **Settings → Emai
 
 - [docs/API.md](docs/API.md): endpoint reference (Sprints 1–4)
 - [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): environment, deploy, rollback, security
-- [docs/RUNBOOK.md](docs/RUNBOOK.md): release targets, controlled launch, alerts, incidents, support, restore drill
+- [docs/RUNBOOK.md](docs/RUNBOOK.md): release targets, controlled launch, alerts, incidents, support, restore and rollback drills
+- [docs/PILOT_REVIEW.md](docs/PILOT_REVIEW.md): what improved, what is unproven, and how to review the pilot
 
 ## API
 

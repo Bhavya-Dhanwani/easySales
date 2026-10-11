@@ -95,6 +95,21 @@ The opportunity id is the lead id. Build and extraction requests answer `202 Acc
 
 Every response carries `X-Request-Id` (a sane incoming one is kept). Workflows started by a request use it as their `correlationId`, so logs, jobs and model calls of one action can be found together. `PATCH /v1/proposals/:id` now only accepts `{ status: "rejected" }`: acceptance goes through `record-acceptance`.
 
+## Conversion analytics, experiments & evaluation (Sprint 6)
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/v1/analytics/funnel` | `?groupBy=month\|week&bySegment=true`. Cohort funnel from stage events (discovered → researched → ICP-qualified → contacted → delivered → positive reply → qualified opportunity → proposal sent → won/lost), rate definitions, `incomplete` for cohorts under 30 days |
+| GET | `/v1/analytics/costs` | `?days=30`. Spend by funnel stage, per opportunity (company and stage only), cost per qualified opportunity, wasted spend |
+| GET | `/v1/analytics/lead-quality` | outcomes per score band (high/medium/low) and criteria most often unknown |
+| GET / POST | `/v1/experiments` | `{ name, hypothesis, variable: subject_line\|opening\|value_proposition\|call_to_action, audience?: { campaignId?, industries?, minScore? }, variants: [{ label, instruction }] (2–4, first is control), primaryMetric?, minSamplePerVariant? }` |
+| POST | `/v1/experiments/:id/start` · `/pause` · `/complete` | completed experiments never restart |
+| GET | `/v1/experiments/:id/results` | per-variant funnel, z-score against the control, stopping rule |
+| POST | `/v1/leads/:id/research?force=true` | without `force`, fresh research (same profile version, within `qualification.researchFreshDays`) is re-scored instead of re-run |
+| POST / GET | `/api/admin/evaluations/run` · `/api/admin/evaluations/results` | operators: run the versioned dataset (`{ live: true }` includes model tasks); results by task, model, prompt hash and dataset version |
+| GET | `/api/admin/analytics/worker-capacity` | backlog, oldest due job, run times and failures per job type, process and database health, scaling advice |
+
+Each lead's qualification now carries `priority` (from `qualification.highPriorityScore` / `mediumPriorityScore`) and each criterion an `observedAt`. Higher-priority lead work is leased first.
+
 ## Outreach, conversations, proposals (earlier sprints)
 `POST /v1/leads/:id/run` (research → qualify → outreach), `GET/POST /v1/approvals[/:id/approve|reject]`, `PATCH /v1/approvals/:id` (edit a draft), `GET /v1/conversations[/:id]`, `POST /v1/conversations/:id/inbound|reply`, `POST /v1/leads/:id/proposals`, `POST /v1/proposals/:id/send`, `PATCH /v1/proposals/:id`.
 
