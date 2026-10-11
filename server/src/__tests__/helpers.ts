@@ -1,4 +1,5 @@
 import "./testEnv.js";
+import Organization from "../shared/models/organization.model.js";
 import mongoose from "mongoose";
 import request from "supertest";
 import { MongoMemoryServer } from "mongodb-memory-server";
@@ -51,7 +52,7 @@ export function fakeMailbox() {
 let seq = 0;
 
 // signs up a user (which creates their organization), verifies them and returns an auth header
-export async function createAccount(name = "Owner") {
+export async function createAccount(name = "Owner", opts: { activated?: boolean } = {}) {
     seq += 1;
     const email = `user${seq}-${Date.now()}@example.com`;
     const password = "correct-horse-battery";
@@ -61,5 +62,7 @@ export async function createAccount(name = "Owner") {
     const login = await request(app).post("/api/auth/login").send({ email, password });
     const token = login.body.data.accessToken as string;
     const me = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${token}`);
+    // existing suites exercise a live workspace; onboarding/activation is covered in sprint7.test.ts
+    if (opts.activated !== false) await Organization.updateOne({ _id: me.body.data.organizations[0].id }, { activatedAt: new Date() });
     return { email, password, token, auth: { Authorization: `Bearer ${token}` }, organizationId: me.body.data.organizations[0].id as string };
 }

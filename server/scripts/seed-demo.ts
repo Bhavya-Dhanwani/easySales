@@ -10,6 +10,7 @@ import User from "../src/shared/models/user.model.js";
 import BusinessProfile from "../src/shared/models/businessProfile.model.js";
 import Lead, { leadDedupeKey } from "../src/shared/models/lead.model.js";
 import Membership from "../src/shared/models/membership.model.js";
+import Organization from "../src/shared/models/organization.model.js";
 import { createOrganizationForUser } from "../src/shared/tenancy/organization.service.js";
 
 export const DEMO_ACCOUNT = {
@@ -32,6 +33,8 @@ async function main() {
         membership = await Membership.findOne({ userId: user._id, status: "active" }).setOptions({ crossTenant: true });
     }
     const organizationId = membership!.organizationId;
+    // the demo workspace is a configured, activated example (real workspaces go through onboarding)
+    await Organization.updateOne({ _id: organizationId }, { industry: "Software & web services", activatedAt: new Date(), "onboarding.voiceConfirmedAt": new Date(), "onboarding.limitsConfirmedAt": new Date() });
 
     await BusinessProfile.updateOne({ organizationId }, {
         businessName: "Pixel Forge Studio",

@@ -54,6 +54,12 @@ const envSchema = z.object({
     // platform-wide emergency brake on total daily spend across all tenants (0 = off)
     GLOBAL_DAILY_SPEND_CAP_MINOR: z.coerce.number().int().min(0).default(0),
 
+    // HMAC secret for the billing provider's webhook (POST /api/webhooks/billing)
+    BILLING_WEBHOOK_SECRET: z.string().default(""),
+
+    // comma-separated emails of support staff: read-only access to operator views
+    SUPPORT_EMAILS: z.string().default(""),
+
     // comma-separated emails of platform operators (admin metrics, feature flags, dead letters)
     ADMIN_EMAILS: z.string().default(""),
 

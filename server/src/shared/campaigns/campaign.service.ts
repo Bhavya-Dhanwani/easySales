@@ -20,6 +20,7 @@ export function audienceFilter(c: CampaignDoc) {
         outreachStatus: { $in: ["not_started", "eligible"] },
         "contact.email": { $type: "string" },
         campaignId: { $exists: false },
+        isTest: { $ne: true },
         ...(anyOf(a.industries) && { "company.industry": anyOf(a.industries) }),
         ...(anyOf(a.countries) && { "company.country": anyOf(a.countries) }),
     };

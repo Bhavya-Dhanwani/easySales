@@ -1,4 +1,5 @@
 // Importing modules
+import { getSubscription } from "../billing/subscription.service.js";
 import { randomBytes } from "node:crypto";
 import mongoose from "mongoose";
 import Organization from "../models/organization.model.js";
@@ -19,6 +20,7 @@ export async function createOrganizationForUser(user: { _id: mongoose.Types.Obje
     await Membership.create({ organizationId: org._id, userId: user._id, email: user.email, role: "owner", status: "active" });
     await BusinessProfile.create({ organizationId: org._id, businessName: name });
     await publishPolicy(org._id, DEFAULT_POLICY, user._id.toString());
+    await getSubscription(org._id);
     await audit({
         organizationId: org._id, actorType: "user", actorId: user._id.toString(),
         action: "organization.create", targetType: "organization", targetId: org._id.toString(), outcome: "success",

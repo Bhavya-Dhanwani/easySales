@@ -1,4 +1,5 @@
 // Importing modules
+import { assertAdvancedAnalytics } from "../../../shared/billing/subscription.service.js";
 import express, { Request, Response } from "express";
 import { z } from "zod";
 import Experiment, { EXPERIMENT_METRICS, EXPERIMENT_VARIABLES } from "../../../shared/models/experiment.model.js";
@@ -33,6 +34,7 @@ router.get("/analytics/funnel", authorize("usage.read"), async (req: Request, re
 */
 router.get("/analytics/costs", authorize("usage.read"), async (req: Request, res: Response) => {
     const ctx = ctxOf(req);
+    await assertAdvancedAnalytics(ctx.organizationId);
     const days = Math.min(365, Math.max(1, Number(req.query.days) || 30));
     return Ok(res, "Costs", await costAnalytics(ctx.organizationId, days));
 });
@@ -43,6 +45,7 @@ router.get("/analytics/costs", authorize("usage.read"), async (req: Request, res
 */
 router.get("/analytics/lead-quality", authorize("usage.read"), async (req: Request, res: Response) => {
     const ctx = ctxOf(req);
+    await assertAdvancedAnalytics(ctx.organizationId);
     return Ok(res, "Lead quality", await leadQuality(ctx.organizationId));
 });
 
@@ -76,6 +79,7 @@ router.get("/experiments", authorize("leads.read"), async (req: Request, res: Re
 */
 router.post("/experiments", authorize("policies.write"), validate(ExperimentSchema), async (req: Request, res: Response) => {
     const ctx = ctxOf(req);
+    await assertAdvancedAnalytics(ctx.organizationId);
     const body = req.body as z.infer<typeof ExperimentSchema>;
     const experiment = await Experiment.create({
         organizationId: ctx.organizationId, ...body, createdBy: ctx.userId,

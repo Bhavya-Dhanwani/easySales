@@ -1,4 +1,5 @@
 // Importing modules
+import { assertQuota } from "../../../shared/billing/subscription.service.js";
 import { recordDiscoveredImport, recordStage } from "../../../shared/analytics/analytics.service.js";
 import express, { Request, Response } from "express";
 import { z } from "zod";
@@ -265,6 +266,7 @@ router.get("/:id", authorize("leads.read"), async (req: Request, res: Response) 
 */
 router.post("/:id/research", authorize("workflows.run"), async (req: Request, res: Response) => {
     const ctx = ctxOf(req);
+    await assertQuota(ctx.organizationId, "research");
     const lead = await Lead.findOne({ organizationId: ctx.organizationId, _id: oid(req.params.id) }, { status: 1 }).lean();
     if (!lead) throw new NotFound("Lead not found");
     const active = await activeWorkflowFor(ctx.organizationId, lead._id, "lead.research");

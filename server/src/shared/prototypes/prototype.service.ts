@@ -1,4 +1,5 @@
 // Importing modules
+import { quotaLeft } from "../billing/subscription.service.js";
 import { createHash, randomBytes } from "node:crypto";
 import mongoose from "mongoose";
 import { ZodError } from "zod";
@@ -100,6 +101,8 @@ export async function requestPrototype(organizationId: Id, opportunityId: Id, op
         prospectBudgetMinor: r?.constraints.budgetMinorUnits ?? null,
     }, config);
     if (!await isEnabled(organizationId, "prototypes")) result = { decision: "deny", reasons: ["Prototype builds are not enabled for this workspace yet"] };
+    const quota = await quotaLeft(organizationId, "prototype");
+    if (quota.left <= 0) result = { decision: "deny", reasons: [quota.suspended ? "Subscription inactive" : `Plan limit reached: ${quota.limit} demo builds per period`] };
 
     // the money is held before anything is queued; two parallel requests cannot both fit in the last slice of budget
     const prototypeId = new mongoose.Types.ObjectId();

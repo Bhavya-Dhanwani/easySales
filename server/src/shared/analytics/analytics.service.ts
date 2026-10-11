@@ -25,8 +25,9 @@ function isoWeek(d: Date) {
 */
 export async function recordStage(organizationId: Id, leadId: Id, stage: FunnelStage, metadata: Record<string, unknown> = {}) {
     try {
-        const lead = await Lead.findOne({ organizationId, _id: leadId }, { createdAt: 1, "company.industry": 1, experiment: 1 }).lean();
-        if (!lead) return;
+        const lead = await Lead.findOne({ organizationId, _id: leadId }, { createdAt: 1, "company.industry": 1, experiment: 1, isTest: 1 }).lean();
+        // the onboarding rehearsal is not a prospect
+        if (!lead || lead.isTest) return;
         const created = lead.createdAt ?? new Date();
         await FunnelEvent.updateOne(
             { organizationId, leadId, stage },

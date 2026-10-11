@@ -1,4 +1,5 @@
 // Importing modules
+import { assertQuota } from "../../../shared/billing/subscription.service.js";
 import express, { Request, Response } from "express";
 import { z } from "zod";
 import mongoose from "mongoose";
@@ -118,6 +119,7 @@ router.get("/members", authorize("members.manage"), async (req: Request, res: Re
 router.post("/members", authorize("members.manage"), validate(InviteSchema), async (req: Request, res: Response) => {
     const ctx = ctxOf(req);
     if (req.body.role === "owner" && ctx.role !== "owner") throw new Forbidden("Only owners can invite owners");
+    await assertQuota(ctx.organizationId, "member");
 
     const existingUser = await User.findOne({ email: req.body.email, isVerified: true }).lean();
     const membership = await Membership.create({

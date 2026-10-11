@@ -20,8 +20,8 @@ export function variantIndex(experimentId: string, leadId: string, variants: num
     experiments; a paused or finished experiment no longer shapes new messages.
 */
 export async function variantFor(organizationId: Id, leadId: Id, campaignId?: Id | null) {
-    const lead = await Lead.findOne({ organizationId, _id: leadId }, { experiment: 1, "qualification.score": 1, "company.industry": 1 }).lean();
-    if (!lead) return null;
+    const lead = await Lead.findOne({ organizationId, _id: leadId }, { experiment: 1, "qualification.score": 1, "company.industry": 1, isTest: 1 }).lean();
+    if (!lead || lead.isTest) return null;
     if (lead.experiment?.id) {
         const exp = await Experiment.findOne({ organizationId, _id: lead.experiment.id, status: "running" }).lean();
         const v = exp?.variants.find((x) => x.id === lead.experiment!.variantId);

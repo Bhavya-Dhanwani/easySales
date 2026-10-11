@@ -1,5 +1,5 @@
 // Importing modules
-import { isPlatformAdmin } from "../../admin/admin.router.js";
+import { isPlatformAdmin, isSupport } from "../../admin/admin.router.js";
 import { Request, Response } from "express";
 import { AuthenticatedRequest, SignupRequest, LoginRequest, SessionRequest, GoogleLoginRequest, ForgotPasswordRequest, ResetPasswordRequest } from "./auth.types.js";
 import env from "../../../shared/config/env.config.js";
@@ -121,7 +121,7 @@ class AuthController {
 	me = async (req: AuthenticatedRequest, res: Response) => {
 		// returning the authenticated user profile
 		const organizations = await listUserOrganizations(String(req.user?.userId));
-		return Ok(res, "User profile fetched successfully", { user: req.user, organizations, isPlatformAdmin: isPlatformAdmin(req.user?.email) });
+		return Ok(res, "User profile fetched successfully", { user: req.user, organizations, isPlatformAdmin: isPlatformAdmin(req.user?.email), isSupport: isSupport(req.user?.email) });
 	};
 
 	// verify the email address with the OTP sent at signup

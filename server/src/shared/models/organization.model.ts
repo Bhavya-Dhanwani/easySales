@@ -10,11 +10,22 @@ const organizationSchema = new mongoose.Schema({
 
     status: { type: String, enum: ["active", "suspended", "deleting"], default: "active" },
 
-    plan: { type: String, enum: ["free", "starter", "pro", "enterprise"], default: "free" },
+    industry: { type: String, trim: true, maxlength: 120 },
 
     timezone: { type: String, default: "Asia/Kolkata" },
 
     defaultCurrency: { type: String, default: "INR", minlength: 3, maxlength: 3 },
+
+    // outreach to real prospects is possible only after onboarding passes and someone activates
+    activatedAt: { type: Date, default: null },
+
+    activatedBy: String,
+
+    onboarding: {
+        voiceConfirmedAt: Date,
+        limitsConfirmedAt: Date,
+        testLeadId: { type: mongoose.Schema.Types.ObjectId, ref: "Lead" },
+    },
 
 }, { timestamps: true });
 

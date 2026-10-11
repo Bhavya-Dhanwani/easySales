@@ -1,4 +1,5 @@
 // Importing modules
+import { alert } from "../../../shared/alerts/alert.service.js";
 import express, { Request, Response } from "express";
 import dns from "node:dns/promises";
 import { randomBytes } from "node:crypto";
@@ -52,6 +53,40 @@ const view = (i: InstanceType<typeof EmailIntegration> | null) => i && {
     smtp: { host: i.smtp?.host, port: i.smtp?.port, secure: i.smtp?.secure, user: i.smtp?.user },
     lastVerifiedAt: i.lastVerifiedAt, lastError: i.lastError, webhookUrl: webhookUrl(i._id), updatedAt: i.updatedAt,
 };
+
+/*
+    @route GET /api/v1/integrations
+    @desc Every integration with its health. Email is live; CRM and calendar adapters plug into the same
+          /integrations/:provider/connect | test | DELETE shape (Sprint 8).
+*/
+router.get("/", authorize("org.manage"), async (req: Request, res: Response) => {
+    const ctx = ctxOf(req);
+    const email = await EmailIntegration.findOne({ organizationId: ctx.organizationId });
+    return Ok(res, "Integrations", {
+        integrations: [
+            { provider: "email", status: email ? (email.status === "connected" ? "connected" : email.status === "error" ? "degraded" : "disconnected") : "disconnected", scopes: ["send", "receive_webhook"], lastHealthCheckAt: email?.lastVerifiedAt ?? null, details: view(email) },
+            { provider: "crm", status: "not_available", scopes: [], lastHealthCheckAt: null, details: null },
+            { provider: "calendar", status: "not_available", scopes: [], lastHealthCheckAt: null, details: null },
+        ],
+    });
+});
+
+// periodic health check (worker): a revoked password or dead host shows up before a send fails
+export async function healthCheckIntegrations(olderThanMs = 6 * 3600_000) {
+    const due = await EmailIntegration.find({ status: { $ne: "disconnected" }, $or: [{ lastVerifiedAt: null }, { lastVerifiedAt: { $lt: new Date(Date.now() - olderThanMs) } }] })
+        .limit(50).setOptions({ crossTenant: true });
+    for (const i of due) {
+        const was = i.status;
+        try {
+            await verifySmtp({ host: i.smtp!.host, port: i.smtp!.port, secure: Boolean(i.smtp!.secure), user: i.smtp!.user }, decryptSecret(i.smtp!.passwordEnc));
+            Object.assign(i, { status: "connected", lastVerifiedAt: new Date(), lastError: undefined });
+        } catch (error) {
+            Object.assign(i, { status: "error", lastVerifiedAt: new Date(), lastError: (error as Error).message.slice(0, 300) });
+            if (was !== "error") await alert(i.organizationId, "provider_outage", `Email account ${i.fromEmail} failed its health check: ${i.lastError}`);
+        }
+        await i.save();
+    }
+}
 
 /*
     @route GET /api/v1/integrations/email

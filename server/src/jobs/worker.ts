@@ -1,4 +1,6 @@
 // Importing modules
+import { healthCheckIntegrations } from "../modules/private/integrations/integrations.router.js";
+import { entitlementsFor, quotaLeft, QUOTA_HOLD, rollOverSubscriptions } from "../shared/billing/subscription.service.js";
 import { recordStage } from "../shared/analytics/analytics.service.js";
 import os from "node:os";
 import { randomBytes } from "node:crypto";
@@ -131,6 +133,19 @@ async function deferIfOverLimit(wf: WorkflowDoc) {
             await alert(wf.organizationId, "budget_exhausted", `Daily research limit (${config.budgets.maxResearchPerDay}) reached; queued research resumes tomorrow.`);
         }
     }
+    // plan quota: research waits for the next period (or an upgrade) instead of failing
+    if (!until && group === RESEARCH && wf.attempts === 1) {
+        const q = await quotaLeft(wf.organizationId, "research");
+        if (q.left <= 0) {
+            const { subscription } = await entitlementsFor(wf.organizationId);
+            until = subscription.currentPeriodEnd > new Date() ? subscription.currentPeriodEnd : new Date(Date.now() + 3600_000);
+            await alert(wf.organizationId, "budget_exhausted", q.suspended ? "Subscription inactive: research is paused until it is renewed." : `Plan limit of ${q.limit} research jobs reached; research resumes next period or after an upgrade.`);
+        }
+    }
+    if (!until && wf.type === "prototype.build") {
+        const { suspended } = await entitlementsFor(wf.organizationId);
+        if (suspended) until = new Date(Date.now() + 3600_000);
+    }
     if (!until) return false;
     await Workflow.updateOne({ organizationId: wf.organizationId, _id: wf._id, status: "running" }, { status: "queued", lockedUntil: null, nextRunAt: until, $inc: { attempts: -1 } });
     return true;
@@ -238,6 +253,15 @@ async function dispatchMessage(msg: InstanceType<typeof Message>) {
             await Message.updateOne(scope, { status: "queued", notBefore: new Date(Date.now() + QUIET_HOURS_RETRY_MS), lockedUntil: null, $inc: { attempts: -1 } });
             return;
         }
+    }
+
+    // plan quota for email: hold the message (never drop it) until the next period or an upgrade
+    const emailQuota = await quotaLeft(organizationId, "email");
+    if (emailQuota.left <= 0) {
+        const { subscription } = await entitlementsFor(organizationId);
+        await Message.updateOne(scope, { status: "queued", error: QUOTA_HOLD, lockedUntil: null, $inc: { attempts: -1 }, notBefore: subscription.currentPeriodEnd > new Date() ? subscription.currentPeriodEnd : new Date(Date.now() + 3600_000) });
+        await alert(organizationId, "send_cap_reached", emailQuota.suspended ? "Subscription inactive: emails are held until it is renewed." : `Plan limit of ${emailQuota.limit} emails reached; queued emails are held until the next period or an upgrade.`);
+        return;
     }
 
     let provider: EmailProvider;
@@ -365,6 +389,7 @@ export async function runOnce({ maxWorkflows = 5, maxMessages = 20, force = fals
     await task("expire_previews", () => expireStalePreviews());
     await task("expire_proposals", () => expireProposals());
     await task("release_reservations", () => releaseExpiredReservations());
+    await task("subscription_rollover", () => rollOverSubscriptions());
     if (force || Date.now() - lastFollowUpScan > 60_000) {
         lastFollowUpScan = Date.now();
         // backpressure: with a deep queue, new follow-ups and enrolments wait; replies and sends do not
@@ -375,6 +400,7 @@ export async function runOnce({ maxWorkflows = 5, maxMessages = 20, force = fals
             await task("campaign_enrolment", enrollCampaigns);
         }
         await task("ops_checks", () => runOpsChecks());
+        await task("integration_health", () => healthCheckIntegrations());
     }
     if (Date.now() - lastRetentionRun > 24 * 3600_000) {
         lastRetentionRun = Date.now();

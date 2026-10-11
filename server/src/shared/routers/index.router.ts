@@ -12,6 +12,8 @@ import researchRouter from "../../modules/private/research/research.router.js";
 import integrationsRouter from "../../modules/private/integrations/integrations.router.js";
 import campaignsRouter from "../../modules/private/campaigns/campaigns.router.js";
 import outreachRouter from "../../modules/private/outreach/outreach.router.js";
+import accountRouter from "../../modules/private/account/account.router.js";
+import billingWebhookRouter from "../../modules/public/webhooks/billing.router.js";
 import analyticsRouter from "../../modules/private/analytics/analytics.router.js";
 import opportunitiesRouter from "../../modules/private/opportunities/opportunities.router.js";
 import previewRouter from "../../modules/public/preview/preview.router.js";
@@ -28,6 +30,7 @@ const router = express.Router();
 // mounting the public routers
 router.use("/health", healthRouter);
 router.use("/auth", authRouter);
+router.use("/webhooks/billing", billingWebhookRouter);
 router.use("/webhooks", webhooksRouter);
 router.use("/preview", previewRouter);
 router.use("/admin", adminRouter);
@@ -57,6 +60,7 @@ v1.use("/campaigns", campaignsRouter);
 v1.use("/", outreachRouter);
 v1.use("/", opportunitiesRouter);
 v1.use("/", analyticsRouter);
+v1.use("/", accountRouter);
 router.use("/v1", v1);
 
 // exporting the router

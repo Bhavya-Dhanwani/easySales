@@ -42,7 +42,8 @@ async function research(s: S) {
         await runResearch({ organizationId: s.organizationId, leadId: s.leadId, workflowId: s.workflowId, correlationId: s.correlationId, requestedAt: wf?.createdAt ?? new Date() });
     }
     const fresh = await getLead(s);
-    return { outcome: fresh.status };
+    // the onboarding rehearsal always goes on to draft (its only recipient is the user)
+    return { outcome: fresh.isTest ? "test" : fresh.status };
 }
 
 // 3. Draft a first-touch email and pass it through the policy gate
@@ -98,7 +99,7 @@ export async function buildLeadPipeline() {
         .addNode("draft", draft)
         .addNode("await_approval", awaitApproval)
         .addEdge(START, "research")
-        .addConditionalEdges("research", (s: S) => (s.outcome === "qualified" ? "draft" : END), ["draft", END])
+        .addConditionalEdges("research", (s: S) => (s.outcome === "qualified" || s.outcome === "test" ? "draft" : END), ["draft", END])
         .addConditionalEdges("draft", (s: S) => (s.sendStatus === "pending_approval" ? "await_approval" : END), ["await_approval", END])
         .addEdge("await_approval", END)
         .compile({ checkpointer: await getCheckpointer() });
