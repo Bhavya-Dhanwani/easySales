@@ -7,7 +7,7 @@ A multi-tenant AI business development platform. A business describes what it se
 ## How it works
 
 ```
-find ─► OpenStreetMap + Google Places + Apollo + web search (parallel) ─► merge & dedupe ─► you pick ─► import ─► research
+find ─► niche check ─► OpenStreetMap ─► dedupe & disqualify ─► you pick ─► import ─► research (finds the contact email)
 lead ─► Research agent ─► Qualification agent ─► Outreach agent ─► Policy engine ─┬─► outbox ─► email
           (SSRF-safe          (LLM score +          (approved           (deterministic, ├─► human approval (LangGraph interrupt)
            web fetch)          hard rules)           claims only)        versioned)      └─► denied + audited
@@ -17,7 +17,7 @@ demo ─► eligibility + budget policy ─► Builder agent (content only) ─�
 proposal ─► price book + tax + payment schedule (code) ─► Proposal agent (scope & prose) ─► validate ─► approval bound to content ─► send ─► revise = new version
 ```
 
-- **Lead discovery** (`server/src/shared/discovery`): locked to the niche the owner sets in the ideal customer profile (search terms and areas), and enforced in code. A search outside it is refused and audited. "Search my whole niche" lets the agent pick the least recently searched term and area pairs itself. One search ("dentist" in "Pune") runs on every enabled source at once, and the profile's disqualifiers remove matching businesses. Results are merged by website and name, and businesses already in the pipeline are marked. A failing source is reported but doesn't stop the search. Paid searches count toward spending limits and a daily cap. Nothing is saved until you pick the leads and record why you may contact them. Research then reads each site and takes the public contact email from it.
+- **Lead discovery** (`server/src/shared/discovery`): locked to the niche the owner sets in the ideal customer profile (search terms and areas), and enforced in code. A search outside it is refused and audited. "Search my whole niche" lets the agent pick the least recently searched term and area pairs itself. Searches run on OpenStreetMap (free, no key, with a daily cap). Duplicates are removed, the profile's disqualifiers remove matching businesses, and businesses already in the pipeline are marked. Nothing is saved until you pick the leads and record why you may contact them. Research then reads each site and takes the public contact email from it.
 - **Reply detection**: replies arrive through the signed inbound webhook, or by reading the inbox over IMAP every minute with the same mailbox login (read-only). The reader only checks the sender and the email it replies to. A full message is downloaded only when it's from a lead or replies to one of our emails, so other mail is never stored.
 - **Agents** (`server/src/agents`): LangChain over any OpenAI-compatible endpoint (LiteLLM, OpenAI…), zod-validated structured output, untrusted content wrapped and never obeyed.
 - **Orchestration** (`server/src/agents/graphs`): LangGraph state graphs with MongoDB checkpoints. A workflow that waits for a human pauses with `interrupt()` and resumes from its checkpoint after the decision, even across restarts.

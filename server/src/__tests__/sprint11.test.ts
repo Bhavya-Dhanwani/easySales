@@ -27,47 +27,35 @@ beforeEach(() => { resetAlertThrottle(); setSmtpVerifier(async () => undefined);
 
 const reply = (status: number, body: unknown) => ({ status, json: async () => body, text: async () => JSON.stringify(body), headers: { get: () => null } });
 
-// every source answers from memory; Apollo rejects its key to prove one failure is not fatal
-function fakeSources(calls: string[]) {
+// OpenStreetMap answers from memory: overlapping areas return the same clinic; Mumbai is down
+function fakeOsm(calls: string[]) {
     setIntegrationHttp(async (url, init) => {
-        calls.push(url.split("?")[0]);
-        if (url.includes("nominatim")) {
-            assert.match(init.headers?.["User-Agent"] ?? "", /easySales/, "Nominatim requires an identifying agent");
-            return reply(200, [
-                { name: "Smile Dental", type: "dentist", display_name: "Smile Dental, FC Road, Pune, India", address: { country: "India" }, extratags: { website: "https://www.smiledental.test/" } },
-                { name: "Tooth Care", type: "dentist", display_name: "Tooth Care, Pune", extratags: { "contact:email": "Hello@ToothCare.test" } },
-            ]);
-        }
-        if (url.includes("places.googleapis.com")) {
-            assert.equal(init.headers?.["X-Goog-Api-Key"], "places-key");
-            return reply(200, { places: [
-                { displayName: { text: "Smile Dental Clinic" }, websiteUri: "http://smiledental.test", internationalPhoneNumber: "+91 20 1234 5678", formattedAddress: "FC Road, Pune, India" },
-                { displayName: { text: "Closed Dental" }, websiteUri: "https://closed.test", businessStatus: "CLOSED_PERMANENTLY" },
-                { displayName: { text: "Bright Smiles" }, websiteUri: "https://brightsmiles.test" },
-            ] });
-        }
-        if (url.includes("apollo.io")) return reply(401, { error: "invalid key" });
-        if (url.includes("search.brave.com")) {
-            return reply(200, { web: { results: [
-                { title: "Best Dentists in Pune - Justdial", url: "https://www.justdial.com/Pune/Dentists" },
-                { title: "Pearl Dental Studio | Dentist in Pune", url: "https://pearldental.test/about" },
-            ] } });
-        }
-        return reply(404, {});
+        const q = new URL(url).searchParams.get("q") ?? "";
+        calls.push(q);
+        assert.match(init.headers?.["User-Agent"] ?? "", /easySales/, "Nominatim requires an identifying agent");
+        if (q.endsWith("Mumbai")) return reply(503, {});
+        return reply(200, [
+            { name: "Tooth Care", type: "dentist", display_name: "Tooth Care, Pune", extratags: { "contact:email": "Hello@ToothCare.test" } },
+            { name: "Smile Dental", type: "dentist", display_name: "Smile Dental, FC Road, Pune, India", address: { country: "India" }, extratags: { website: "https://www.smiledental.test/", phone: "+91 20 1234 5678" } },
+            { name: "Smile Dental Clinic", type: "dentist", extratags: { "contact:website": "http://smiledental.test" } },
+            { name: "Pearl Dental Studio", type: "dentist", extratags: { website: "https://pearldental.test" } },
+            { name: "Bright Smiles", type: "dentist", extratags: { website: "https://brightsmiles.test" } },
+            { display_name: "unnamed node" },
+        ]);
     });
 }
 
-test("lead discovery: locked to the niche, searches every enabled source, merges duplicates, survives a failing source, meters cost", async () => {
-    Object.assign(env, { GOOGLE_PLACES_API_KEY: "places-key", APOLLO_API_KEY: "apollo-key", BRAVE_SEARCH_API_KEY: "brave-key", DISCOVERY_COST_MINOR: 3, DISCOVERY_SEARCHES_PER_DAY: 4 });
+test("lead discovery: locked to the niche, OpenStreetMap only, deduplicated, disqualifiers applied, daily cap", async () => {
+    Object.assign(env, { DISCOVERY_SEARCHES_PER_DAY: 5 });
     const calls: string[] = [];
-    fakeSources(calls);
+    fakeOsm(calls);
     const owner = await createAccount("Finder");
     await request(app).post("/api/v1/leads").set(owner.auth).send({ companyName: "Bright Smiles", website: "brightsmiles.test" });
 
     // no niche configured: the search refuses to run at all
     assert.equal((await request(app).post("/api/v1/leads/discover").set(owner.auth).send({ what: "dentist", where: "Pune" })).status, 400);
     await BusinessProfile.updateOne({ organizationId: owner.organizationId }, { $set: {
-        "idealCustomerProfile.searchTerms": ["Dentist"], "idealCustomerProfile.searchAreas": ["Pune, India", "Pune"], "idealCustomerProfile.disqualifiers": ["Pearl"],
+        "idealCustomerProfile.searchTerms": ["Dentist"], "idealCustomerProfile.searchAreas": ["Pune, India", "Pune", "Mumbai"], "idealCustomerProfile.disqualifiers": ["Pearl"],
     } }, { upsert: true });
     // outside the niche: refused in code and audited, whoever asks
     const off = await request(app).post("/api/v1/leads/discover").set(owner.auth).send({ what: "restaurant", where: "Pune" });
@@ -76,42 +64,28 @@ test("lead discovery: locked to the niche, searches every enabled source, merges
     assert.equal((await request(app).post("/api/v1/leads/discover").set(owner.auth).send({ what: "dentist", where: "Delhi" })).status, 403);
     assert.ok(await AuditEvent.exists({ organizationId: owner.organizationId, action: "lead.discover", outcome: "denied" }));
     assert.equal(calls.length, 0, "nothing was searched");
-
-    const meta = (await request(app).get("/api/v1/leads/discover/sources").set(owner.auth)).body.data;
-    assert.deepEqual(meta.niche, { searchTerms: ["Dentist"], searchAreas: ["Pune, India", "Pune"] });
-    const sources = meta.sources;
-    assert.deepEqual(sources.filter((s: { enabled: boolean }) => s.enabled).map((s: { id: string }) => s.id), ["openstreetmap", "google_places", "apollo", "web_search"]);
+    assert.deepEqual((await request(app).get("/api/v1/leads/discover/niche").set(owner.auth)).body.data.niche, { searchTerms: ["Dentist"], searchAreas: ["Pune, India", "Pune", "Mumbai"] });
 
     const r = await request(app).post("/api/v1/leads/discover").set(owner.auth).send({ what: "dentist", where: "Pune, India" });
     assert.equal(r.status, 200);
-    const { candidates, sources: report, costMinor, disqualified } = r.body.data;
-    assert.equal(calls.length, 4, "all four sources searched");
-    assert.deepEqual(report.find((s: { source: string }) => s.source === "apollo"), { source: "apollo", ok: false, count: 0, error: "Apollo: API key rejected" });
-
-    const names = candidates.map((c: { name: string }) => c.name).sort();
-    assert.deepEqual(names, ["Bright Smiles", "Smile Dental", "Tooth Care"], "merged by domain; closed, directory and disqualified results dropped");
+    assert.deepEqual(calls, ["Dentist in Pune, India"], "the niche's own wording is searched");
+    const { candidates, disqualified } = r.body.data;
+    assert.deepEqual(candidates.map((c: { name: string }) => c.name), ["Smile Dental", "Bright Smiles", "Tooth Care"], "same website kept once, unnamed dropped, websites first");
     assert.equal(disqualified, 1, "the profile's disqualifier removed Pearl Dental Studio");
-    const smile = candidates.find((c: { name: string }) => c.name === "Smile Dental");
-    assert.deepEqual(smile.sources, ["openstreetmap", "google_places"]);
-    assert.equal(smile.domain, "smiledental.test");
-    assert.equal(smile.phone, "+91 20 1234 5678", "the second source fills gaps");
-    assert.equal(candidates[0].name, "Smile Dental", "found by more sources ranks first");
-    assert.equal(candidates.find((c: { name: string }) => c.name === "Tooth Care").email, "hello@toothcare.test");
-    assert.equal(candidates.find((c: { name: string }) => c.name === "Bright Smiles").alreadyLead, true, "existing lead is marked");
+    const smile = candidates[0];
+    assert.deepEqual([smile.domain, smile.website, smile.phone], ["smiledental.test", "https://www.smiledental.test", "+91 20 1234 5678"]);
+    assert.equal(candidates[2].email, "hello@toothcare.test");
+    assert.equal(candidates[1].alreadyLead, true, "existing lead is marked");
+    assert.equal(await UsageRecord.countDocuments({ organizationId: owner.organizationId, kind: "discovery", costMinor: 0 }), 1, "metered at no cost");
 
-    assert.equal(costMinor, 6, "two paid searches ran (the failed one is not charged)");
-    const usage = await UsageRecord.findOne({ organizationId: owner.organizationId, kind: "discovery" }).lean();
-    assert.equal(usage?.costMinor, 6);
-
-    // picking one source
-    const osmOnly = await request(app).post("/api/v1/leads/discover").set(owner.auth).send({ what: "dentist", where: "Pune", sources: ["openstreetmap"] });
-    assert.equal(osmOnly.body.data.costMinor, 0, "OpenStreetMap is free");
-    // the agent searching on its own: every term x area of the niche, least recently searched first
+    // the agent searching on its own: never-searched pairs first; one failing area does not sink the rest
     const auto = await request(app).post("/api/v1/leads/discover").set(owner.auth).send({ auto: true });
     assert.equal(auto.status, 200);
-    assert.deepEqual(auto.body.data.queries, [{ what: "Dentist", where: "Pune, India" }, { what: "Dentist", where: "Pune" }]);
-    assert.equal(auto.body.data.costMinor, 12, "two queries x two paid sources that answered");
-    // then the daily cap stops further searches
+    assert.deepEqual(auto.body.data.queries, [{ what: "Dentist", where: "Pune" }, { what: "Dentist", where: "Mumbai" }, { what: "Dentist", where: "Pune, India" }]);
+    assert.deepEqual(auto.body.data.failed.map((f: { where: string }) => f.where), ["Mumbai"]);
+    assert.equal(auto.body.data.candidates.length, 3, "overlapping areas deduplicated");
+    // when every query fails the search says so; then the daily cap stops further searches
+    assert.equal((await request(app).post("/api/v1/leads/discover").set(owner.auth).send({ what: "dentist", where: "Mumbai" })).status, 502);
     assert.equal((await request(app).post("/api/v1/leads/discover").set(owner.auth).send({ what: "dentist", where: "Pune" })).status, 429);
 
     // chosen candidates go through the normal import (dedupe, error report) and straight into research
@@ -127,7 +101,7 @@ test("lead discovery: locked to the niche, searches every enabled source, merges
     // other tenants never see the search or its leads
     const other = await createAccount("Other");
     assert.equal(await Lead.countDocuments({ organizationId: other.organizationId }), 0);
-    Object.assign(env, { GOOGLE_PLACES_API_KEY: "", APOLLO_API_KEY: "", BRAVE_SEARCH_API_KEY: "", DISCOVERY_SEARCHES_PER_DAY: 30 });
+    Object.assign(env, { DISCOVERY_SEARCHES_PER_DAY: 30 });
 });
 
 test("research finds a public contact email on the prospect's own site", () => {

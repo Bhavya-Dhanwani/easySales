@@ -25,9 +25,7 @@ Copy `server/.env.example` and set at least:
 | `BILLING_WEBHOOK_SECRET` | shared secret for `POST /api/webhooks/billing` (the endpoint answers 503 until it is set) |
 | `SUPPORT_EMAILS` | optional; read-only support staff for the Operations page and workspace health |
 | `ALERT_WEBHOOK_URL` | optional; Slack or Discord incoming webhook |
-| `DISCOVERY_OSM`, `NOMINATIM_URL` | free lead search on OpenStreetMap (on by default). The public Nominatim server allows low volume only (about 1 request/second, no bulk use); for heavy use, point `NOMINATIM_URL` at your own or a paid instance |
-| `GOOGLE_PLACES_API_KEY`, `APOLLO_API_KEY`, `BRAVE_SEARCH_API_KEY` | optional paid lead sources: Google Places (Text Search), Apollo (company search), Brave web search. Each turns on when its key is set. Google's terms restrict storing Places content beyond the place id, so review them before enabling |
-| `DISCOVERY_COST_MINOR`, `DISCOVERY_SEARCHES_PER_DAY` | metered cost of one paid search per source; searches per workspace per day |
+| `NOMINATIM_URL`, `DISCOVERY_SEARCHES_PER_DAY` | lead search on OpenStreetMap: free, no key. The public Nominatim server allows low volume only (about 1 request/second, no bulk use), hence the per-workspace daily cap; for heavy use, point `NOMINATIM_URL` at your own instance |
 | `NEATLOGS_API_KEY`, `NEATLOGS_ENDPOINT`, `NEATLOGS_CAPTURE_CONTENT` | optional AI tracing in [Neatlogs](https://neatlogs.com): every agent run and model call (prompt, output, tokens, latency, errors) with workspace, agent, workflow and request id. Off when the key is empty. PII is redacted; `NEATLOGS_CAPTURE_CONTENT=false` sends timing, tokens and metadata only. Use a separate Neatlogs project per environment |
 | `RUN_WORKER` | `false` on API instances when you run a separate worker |
 

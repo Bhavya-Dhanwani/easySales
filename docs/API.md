@@ -20,8 +20,8 @@ Base URL `/api`. Authenticated routes live under `/api/v1` and need `Authorizati
 | GET | `/v1/leads` | filters: `status`, `stage`, `industry`, `country`, `minScore`, `maxScore`, `assignedTo`, `createdAfter`, `createdBefore`, `q`, `cursor`, `limit` |
 | POST | `/v1/leads` | manual create; 409 on duplicate |
 | POST | `/v1/leads/import` | `{ fileName?, rows: [...], source?: "csv" \| "discovery", research?: boolean }` (≤ 2000 mapped rows), `Idempotency-Key` header → `ImportJob`. `research: true` queues research for the new leads |
-| GET | `/v1/leads/discover/sources` | lead sources (`openstreetmap`, `google_places`, `apollo`, `web_search`) with `enabled` and `paid`, plus the search `niche` |
-| POST | `/v1/leads/discover` | `{ what, where }` or `{ auto: true }`, plus `sources?`, `limit?`. Locked to the profile's `searchTerms` x `searchAreas`: no niche → 400, off-niche → 403 (audited). `auto` runs the three least recently searched pairs. Returns merged `candidates` (disqualifiers dropped, `alreadyLead` marked), `queries`, per-source report, `costMinor`. Nothing is saved; daily cap `DISCOVERY_SEARCHES_PER_DAY` counts queries (429) |
+| GET | `/v1/leads/discover/niche` | the search terms and areas lead search is locked to |
+| POST | `/v1/leads/discover` | `{ what, where }` or `{ auto: true }`, plus `limit?`. Searches OpenStreetMap, locked to the profile's `searchTerms` x `searchAreas`: no niche → 400, off-niche → 403 (audited). `auto` runs the three least recently searched pairs. Returns deduplicated `candidates` (disqualifiers dropped, `alreadyLead` marked), `queries`, `failed`, `disqualified`. Nothing is saved; daily cap `DISCOVERY_SEARCHES_PER_DAY` counts queries (429) |
 | GET | `/v1/imports`, `/v1/imports/:id` | progress and counts |
 | GET | `/v1/imports/:id/errors.csv` | row-level error report (formula-safe) |
 | GET / PATCH / DELETE | `/v1/leads/:id` | PATCH: `opportunityStage`, `contact`, `consent`, `status` (human override) |

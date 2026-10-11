@@ -12,7 +12,7 @@ const PAGES: Record<string, { title: string; body: React.ReactNode }> = {
       <h2>What easySales does</h2>
       <p>easySales researches your leads, scores them against your ideal customer, writes and sends outreach from your own mailbox, handles replies, books meetings from your real calendar, builds demo pages from approved templates and prepares proposals priced from your own price list.</p>
       <h2>Finding leads and reading replies</h2>
-      <p>Under <b>Leads → Find leads</b>, pick a kind of business and a place from the search terms and areas in your ideal customer profile (searches outside them are refused), or let the agent search your whole niche. easySales searches OpenStreetMap, plus Google Places, Apollo and web search when they are enabled, and shows one merged list. You choose who to add and record why you may contact them; research then reads each business&apos;s website and finds its public contact email.</p>
+      <p>Under <b>Leads → Find leads</b>, pick a kind of business and a place from the search terms and areas in your ideal customer profile (searches outside them are refused), or let the agent search your whole niche. easySales searches OpenStreetMap and shows one list. You choose who to add and record why you may contact them; research then reads each business&apos;s website and finds its public contact email.</p>
       <p>Replies are read from your connected inbox every minute (read-only). Only replies from your leads are opened; other mail is never downloaded or stored.</p>
       <h2>What it will not do</h2>
       <ul>
@@ -59,7 +59,7 @@ const PAGES: Record<string, { title: string; body: React.ReactNode }> = {
         <li>Account data: names, emails, roles, sign-in and billing status.</li>
         <li>Your business data: leads, research from public websites, conversations, demos, proposals and analytics.</li>
         <li>Connected services: encrypted mailbox and CRM/calendar credentials, used only for the actions you enable. When inbox reading is on, we check the sender of new mail and download only replies from your leads; other mail is never stored.</li>
-        <li>Lead search: publicly listed business details (name, website, phone, address, published contact email) from OpenStreetMap and, if enabled, Google Places, Apollo and web search, saved only for the businesses you choose to add.</li>
+        <li>Lead search: publicly listed business details (name, website, phone, address, published contact email) from OpenStreetMap, saved only for the businesses you choose to add.</li>
       </ul>
       <h2>AI providers</h2>
       <p>To write research, emails and replies, relevant parts of your data are sent to our AI model provider under terms that do not allow training on it.</p>

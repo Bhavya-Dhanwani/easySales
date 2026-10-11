@@ -80,14 +80,8 @@ const envSchema = z.object({
     // above this many due jobs the worker defers non-critical scheduling (follow-ups, campaign enrolment)
     QUEUE_BACKPRESSURE: z.coerce.number().int().min(1).default(500),
 
-    // lead discovery sources: OpenStreetMap is free and on by default; the others turn on with their key
-    DISCOVERY_OSM: booleanFromEnv(true),
+    // lead discovery on OpenStreetMap (free, no key); the public server allows low volume only
     NOMINATIM_URL: z.string().url().default("https://nominatim.openstreetmap.org"),
-    GOOGLE_PLACES_API_KEY: z.string().default(""),
-    APOLLO_API_KEY: z.string().default(""),
-    BRAVE_SEARCH_API_KEY: z.string().default(""),
-    // cost of one paid search per source (minor units), metered into the usage ledger and spend limits
-    DISCOVERY_COST_MINOR: z.coerce.number().int().min(0).default(3),
     DISCOVERY_SEARCHES_PER_DAY: z.coerce.number().int().min(1).default(30),
 
     // Neatlogs AI tracing (off unless a key is set); content capture can be turned off (metadata only)

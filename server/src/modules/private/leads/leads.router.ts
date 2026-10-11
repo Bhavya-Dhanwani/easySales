@@ -21,7 +21,7 @@ import { activeWorkflowFor, startWorkflow } from "../../../shared/workflows/work
 import { getCurrentPolicy, normalizeEmail } from "../../../shared/policy/policy.service.js";
 import { requalify } from "../../../shared/research/research.service.js";
 import { createProposal } from "../../../shared/proposals/proposal.service.js";
-import { DISCOVERY_SOURCES, discoverLeads, discoverySources, nextNicheQueries } from "../../../shared/discovery/discovery.service.js";
+import { discoverLeads, nextNicheQueries, nicheOf } from "../../../shared/discovery/discovery.service.js";
 import { escapeRegex, nextCursor, oid, pageParams, str } from "../../../shared/utils/request.util.js";
 import Ok from "../../../shared/responses/Ok.response.js";
 import Created from "../../../shared/responses/Created.response.js";
@@ -128,30 +128,29 @@ router.post("/", authorize("leads.write"), validate(LeadInputSchema), async (req
 });
 
 /*
-    @route GET /api/v1/leads/discover/sources
-    @desc Lead sources and whether each is enabled (free OpenStreetMap; others need an API key), and the search niche
+    @route GET /api/v1/leads/discover/niche
+    @desc The search terms and areas lead search is locked to
 */
-router.get("/discover/sources", authorize("leads.read"), async (req: Request, res: Response) => {
-    const icp = (await BusinessProfile.findOne({ organizationId: ctxOf(req).organizationId }, { idealCustomerProfile: 1 }).lean())?.idealCustomerProfile;
-    return Ok(res, "Lead sources", { sources: discoverySources(), niche: { searchTerms: icp?.searchTerms ?? [], searchAreas: icp?.searchAreas ?? [] } });
+router.get("/discover/niche", authorize("leads.read"), async (req: Request, res: Response) => {
+    const { searchTerms, searchAreas } = await nicheOf(ctxOf(req).organizationId);
+    return Ok(res, "Search niche", { niche: { searchTerms, searchAreas } });
 });
 
 /*
     @route POST /api/v1/leads/discover
-    @desc Search several sources at once ("dentist" in "Pune"), locked to the profile's search terms and areas,
-          merged and deduplicated, disqualifiers dropped, leads already in the pipeline marked. Nothing is saved: chosen candidates go through /import (source "discovery").
+    @desc Search OpenStreetMap ("dentist" in "Pune"), locked to the profile's search terms and areas,
+          deduplicated, disqualifiers dropped, leads already in the pipeline marked. Nothing is saved: chosen candidates go through /import (source "discovery").
 */
 router.post("/discover", authorize("leads.write"), validate(z.object({
     what: z.string().trim().min(2).max(100).optional(),
     where: z.string().trim().min(2).max(100).optional(),
     // the agent picks the least recently searched term x area pairs of the niche itself
     auto: z.boolean().default(false),
-    sources: z.array(z.enum(DISCOVERY_SOURCES)).max(DISCOVERY_SOURCES.length).optional(),
     limit: z.coerce.number().int().min(1).max(100).default(50),
 }).strict().refine((b) => b.auto || (b.what && b.where), "Give a search term and an area, or use auto")), async (req: Request, res: Response) => {
     const ctx = ctxOf(req);
     const queries = req.body.auto ? await nextNicheQueries(ctx.organizationId, 3) : [{ what: req.body.what, where: req.body.where }];
-    return Ok(res, "Lead search finished", await discoverLeads(ctx.organizationId, ctx.userId, { queries, sources: req.body.sources, limit: req.body.limit }));
+    return Ok(res, "Lead search finished", await discoverLeads(ctx.organizationId, ctx.userId, { queries, limit: req.body.limit }));
 });
 
 /*
