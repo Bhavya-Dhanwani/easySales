@@ -1,4 +1,5 @@
 // Importing modules
+import { neatlogsCallbacks } from "../shared/observability/neatlogs.js";
 import { ChatOpenAI } from "@langchain/openai";
 import { z, ZodTypeAny } from "zod";
 import env from "../shared/config/env.config.js";
@@ -63,7 +64,7 @@ class LangChainGateway implements LlmGateway {
         const { raw, parsed } = await runnable.invoke([
             { role: "system", content: system },
             { role: "user", content: user },
-        ]);
+        ], { callbacks: neatlogsCallbacks() });
         if (!parsed) throw new Error(`${agent}: model returned no structured output`);
         const usage = (raw as { usage_metadata?: { input_tokens?: number; output_tokens?: number } }).usage_metadata;
         return {

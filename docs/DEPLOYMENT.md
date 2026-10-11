@@ -25,6 +25,7 @@ Copy `server/.env.example` and set at least:
 | `BILLING_WEBHOOK_SECRET` | shared secret for `POST /api/webhooks/billing` (the endpoint answers 503 until it is set) |
 | `SUPPORT_EMAILS` | optional; read-only support staff for the Operations page and workspace health |
 | `ALERT_WEBHOOK_URL` | optional; Slack or Discord incoming webhook |
+| `NEATLOGS_API_KEY`, `NEATLOGS_ENDPOINT`, `NEATLOGS_CAPTURE_CONTENT` | optional AI tracing in [Neatlogs](https://neatlogs.com): every agent run and model call (prompt, output, tokens, latency, errors) with workspace, agent, workflow and request id. Off when the key is empty. PII is redacted; `NEATLOGS_CAPTURE_CONTENT=false` sends timing, tokens and metadata only. Use a separate Neatlogs project per environment |
 | `RUN_WORKER` | `false` on API instances when you run a separate worker |
 
 Keep secrets in your platform's secret manager, not in the image (`.dockerignore` excludes every `.env`).

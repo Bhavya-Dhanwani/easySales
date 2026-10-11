@@ -21,7 +21,7 @@ Date: 2026-10-11 · Scope: Sprints 1–10 · Evidence: automated tests (85 serve
 
 | Gate | Status | Evidence / what is missing |
 |---|---|---|
-| No unresolved critical release-blocking security issues | ✅ | `npm audit` 0 (server, client); tenant isolation, SSRF, injection, signature, replay and credential tests. No external penetration test yet (recommended before scaling past pilots) |
+| No unresolved critical release-blocking security issues | ✅ | `npm audit` clean except one reviewed, unreachable moderate advisory from the Neatlogs SDK (`server/audit-allowlist.json`, review by 2027-01-11); tenant isolation, SSRF, injection, signature, replay and credential tests. No external penetration test yet (recommended before scaling past pilots) |
 | Tenant isolation, credentials, approvals and suppression rules pass their tests | ✅ | cross-tenant tests in sprints 1–9; approvals bound to payload + state with atomic claim; opt-out tests |
 | Critical workflows recover from provider and worker failures | ✅ | provider outage, rate limits, revoked tokens, stale leases, uncertain sends, lost responses (sprints 5, 8, 10) |
 | Backups, restoration, monitoring and rollback verified | ⚠️ partial | monitoring/alerts, migrations and rollback (previous release on current data) verified; **restore drill done on local MongoDB only: repeat on Atlas** |

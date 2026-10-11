@@ -1,0 +1,8 @@
+[
+  {
+    "id": "GHSA-8988-4f7v-96qf",
+    "package": "@opentelemetry/core",
+    "reason": "Pulled in by neatlogs (OpenTelemetry 1.x). The flaw is in parsing inbound W3C baggage headers; we never extract inbound trace context, so it is not reachable. Fix needs OpenTelemetry 2.x, which neatlogs does not support yet.",
+    "reviewBy": "2027-01-11"
+  }
+]

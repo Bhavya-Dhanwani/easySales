@@ -43,7 +43,9 @@ proposal ─► price book + tax + payment schedule (code) ─► Proposal agent
 | Data | MongoDB (Mongoose) |
 | Tests | `node:test` + supertest + mongodb-memory-server, fake LLM gateway |
 
-`npm audit` reports **0 vulnerabilities** in both packages (CI enforces this).
+CI fails on any `npm audit` advisory. The client has none. The server has one reviewed exception in `server/audit-allowlist.json`: a moderate OpenTelemetry advisory pulled in by Neatlogs, which is not reachable here. `scripts/audit.mjs` enforces the allowlist; an entry expires on its review date and must be removed once the advisory is gone.
+
+AI tracing: set `NEATLOGS_API_KEY` to send agent and model traces to Neatlogs (off by default; see DEPLOYMENT.md).
 
 ## Run locally
 

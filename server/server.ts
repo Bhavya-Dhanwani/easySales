@@ -1,3 +1,4 @@
+import { initNeatlogs, shutdownNeatlogs } from "./src/shared/observability/neatlogs.js";
 import mongoose from "mongoose";
 import createApp from "./src/app.js";
 import connectDB from "./src/shared/config/db.config.js";
@@ -9,6 +10,7 @@ async function startServer() {
 	const app = createApp();
 
 	await connectDB();
+	await initNeatlogs("api");
 
 	// the agent worker can run in-process (simple deploys) or as its own process (npm run worker)
 	if (env.RUN_WORKER) startWorker();
@@ -23,7 +25,7 @@ async function startServer() {
 		setTimeout(() => process.exit(1), 30_000).unref();
 		// stop accepting requests, let the in-flight worker tick finish, then close the database
 		server.close();
-		stopWorker().then(() => mongoose.disconnect()).finally(() => process.exit(0));
+		stopWorker().then(() => shutdownNeatlogs()).then(() => mongoose.disconnect()).finally(() => process.exit(0));
 	};
 	process.on("SIGTERM", () => shutdown("SIGTERM"));
 	process.on("SIGINT", () => shutdown("SIGINT"));

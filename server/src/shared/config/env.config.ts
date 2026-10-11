@@ -80,6 +80,11 @@ const envSchema = z.object({
     // above this many due jobs the worker defers non-critical scheduling (follow-ups, campaign enrolment)
     QUEUE_BACKPRESSURE: z.coerce.number().int().min(1).default(500),
 
+    // Neatlogs AI tracing (off unless a key is set); content capture can be turned off (metadata only)
+    NEATLOGS_API_KEY: z.string().default(""),
+    NEATLOGS_ENDPOINT: z.string().url().default("https://ingest.neatlogs.com"),
+    NEATLOGS_CAPTURE_CONTENT: booleanFromEnv(true),
+
     // run the background worker inside the API process (disable when running `npm run worker` separately)
     RUN_WORKER: booleanFromEnv(true),
 });

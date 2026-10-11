@@ -22,7 +22,8 @@ jobs:
           cache: npm
           cache-dependency-path: server/package-lock.json
       - run: npm ci
-      - run: npm audit --audit-level=low
+      # fails on any advisory not reviewed in audit-allowlist.json (and on expired or stale entries)
+      - run: node scripts/audit.mjs
       - run: npm run typecheck
       # unit + integration tests run against an in-memory MongoDB with a fake LLM
       - run: npm test

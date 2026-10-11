@@ -1,4 +1,5 @@
 // Importing modules
+import { traced } from "../shared/observability/neatlogs.js";
 import mongoose from "mongoose";
 import { z, ZodTypeAny } from "zod";
 import { getLlm, ModelTier } from "./llm.js";
@@ -62,7 +63,10 @@ export async function runAgent<S extends ZodTypeAny>(
 
     const started = Date.now();
     try {
-        const result = await getLlm().structured({ agent, ...call });
+        const result = await traced(
+            { agent, organizationId: String(ctx.organizationId), workflowId: ctx.workflowId ? String(ctx.workflowId) : undefined, correlationId: ctx.correlationId },
+            () => getLlm().structured({ agent, ...call }),
+        );
         consecutiveProviderErrors = 0;
         const durationMs = Date.now() - started;
         const costMinor = ctx.costCoveredBy ? 0 : llmCostMinor(result.inputTokens, result.outputTokens);

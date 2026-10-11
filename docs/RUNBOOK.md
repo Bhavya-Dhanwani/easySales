@@ -33,6 +33,8 @@ Kept under human control throughout: exceptional pricing, contracts, payments, p
 
 Alerts go to the logs, the tenant's audit log (tenant alerts) and `ALERT_WEBHOOK_URL` (Slack/Discord).
 
+For AI problems (wrong output, slow or failing model calls, cost spikes), open Neatlogs when `NEATLOGS_API_KEY` is set. Each agent run is a trace named `agent.<agent>`. Its session is the request's correlation id (the `x-request-id` in the logs), and its metadata holds the workspace and workflow id.
+
 | Alert | First check | Typical fix |
 |---|---|---|
 | `provider_outage` (AI) | provider status page; `/api/admin/metrics/summary` → `model24h.failed` | wait/switch `LLM_BASE_URL`; failed jobs → Operations → Dead letters → Retry |

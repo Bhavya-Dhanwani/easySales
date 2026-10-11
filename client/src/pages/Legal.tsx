@@ -59,6 +59,8 @@ const PAGES: Record<string, { title: string; body: React.ReactNode }> = {
       </ul>
       <h2>AI providers</h2>
       <p>To write research, emails and replies, relevant parts of your data are sent to our AI model provider under terms that do not allow training on it.</p>
+      <h2>Monitoring</h2>
+      <p>To find and fix errors in AI output, we may send traces of AI requests to our monitoring provider, Neatlogs. A trace contains the request and response, timing and token counts, and personal data is redacted first. We can also send timing and counts only. Traces are used only to operate and improve the service.</p>
       <h2>Retention and deletion</h2>
       <p>Messages and audit records are kept for the periods set in your workspace policy; you can export or delete your workspace at any time. Opt-out records are kept so that nobody who opted out is contacted again.</p>
       <h2>Security</h2>

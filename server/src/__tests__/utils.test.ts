@@ -79,3 +79,11 @@ test("secrets round-trip through AES-GCM and tampering is detected", () => {
     const [iv, tag, data] = sealed.split(".");
     assert.throws(() => decryptSecret([iv, tag, data.slice(0, -2) + "AA"].join(".")));
 });
+
+test("neatlogs: off without a key (no callbacks, plain passthrough) and metadata-only mode strips content", async () => {
+    const { neatlogsCallbacks, traced, stripContent } = await import("../shared/observability/neatlogs.js");
+    assert.deepEqual(neatlogsCallbacks(), []);
+    assert.equal(await traced({ agent: "research", organizationId: "o1" }, async () => 7), 7);
+    const span = stripContent({ "input.value": "prompt", "output.value": "out", "llm.input_messages.0.message.content": "hi", "llm.token_count.prompt": 12, "llm.model_name": "m", "metadata.organizationId": "o1" });
+    assert.deepEqual(span, { "llm.token_count.prompt": 12, "llm.model_name": "m", "metadata.organizationId": "o1" });
+});
