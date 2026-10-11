@@ -255,7 +255,7 @@ export interface BusinessProfile {
   description: string
   website: string
   services: Service[]
-  idealCustomerProfile: { industries: string[]; companySizes: string[]; regions: string[]; requiredSignals: string[]; disqualifiers: string[] }
+  idealCustomerProfile: { industries: string[]; companySizes: string[]; regions: string[]; requiredSignals: string[]; disqualifiers: string[]; searchTerms?: string[]; searchAreas?: string[] }
   brandVoice: string
   approvedClaims: string[]
   prohibitedClaims: string[]

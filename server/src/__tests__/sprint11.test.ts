@@ -16,6 +16,8 @@ import Workflow from "../shared/models/workflow.model.js";
 import UsageRecord from "../shared/models/usageRecord.model.js";
 import ProviderEvent from "../shared/models/providerEvent.model.js";
 import EmailIntegration from "../shared/models/emailIntegration.model.js";
+import BusinessProfile from "../shared/models/businessProfile.model.js";
+import AuditEvent from "../shared/models/auditEvent.model.js";
 
 before(startDb);
 after(async () => { setIntegrationHttp(null); await stopDb(); });
@@ -55,24 +57,40 @@ function fakeSources(calls: string[]) {
     });
 }
 
-test("lead discovery: searches every enabled source, merges duplicates, survives a failing source, meters cost", async () => {
-    Object.assign(env, { GOOGLE_PLACES_API_KEY: "places-key", APOLLO_API_KEY: "apollo-key", BRAVE_SEARCH_API_KEY: "brave-key", DISCOVERY_COST_MINOR: 3, DISCOVERY_SEARCHES_PER_DAY: 2 });
+test("lead discovery: locked to the niche, searches every enabled source, merges duplicates, survives a failing source, meters cost", async () => {
+    Object.assign(env, { GOOGLE_PLACES_API_KEY: "places-key", APOLLO_API_KEY: "apollo-key", BRAVE_SEARCH_API_KEY: "brave-key", DISCOVERY_COST_MINOR: 3, DISCOVERY_SEARCHES_PER_DAY: 4 });
     const calls: string[] = [];
     fakeSources(calls);
     const owner = await createAccount("Finder");
     await request(app).post("/api/v1/leads").set(owner.auth).send({ companyName: "Bright Smiles", website: "brightsmiles.test" });
 
-    const sources = (await request(app).get("/api/v1/leads/discover/sources").set(owner.auth)).body.data.sources;
+    // no niche configured: the search refuses to run at all
+    assert.equal((await request(app).post("/api/v1/leads/discover").set(owner.auth).send({ what: "dentist", where: "Pune" })).status, 400);
+    await BusinessProfile.updateOne({ organizationId: owner.organizationId }, { $set: {
+        "idealCustomerProfile.searchTerms": ["Dentist"], "idealCustomerProfile.searchAreas": ["Pune, India", "Pune"], "idealCustomerProfile.disqualifiers": ["Pearl"],
+    } }, { upsert: true });
+    // outside the niche: refused in code and audited, whoever asks
+    const off = await request(app).post("/api/v1/leads/discover").set(owner.auth).send({ what: "restaurant", where: "Pune" });
+    assert.equal(off.status, 403);
+    assert.match(off.body.message, /outside your niche.*Dentist/);
+    assert.equal((await request(app).post("/api/v1/leads/discover").set(owner.auth).send({ what: "dentist", where: "Delhi" })).status, 403);
+    assert.ok(await AuditEvent.exists({ organizationId: owner.organizationId, action: "lead.discover", outcome: "denied" }));
+    assert.equal(calls.length, 0, "nothing was searched");
+
+    const meta = (await request(app).get("/api/v1/leads/discover/sources").set(owner.auth)).body.data;
+    assert.deepEqual(meta.niche, { searchTerms: ["Dentist"], searchAreas: ["Pune, India", "Pune"] });
+    const sources = meta.sources;
     assert.deepEqual(sources.filter((s: { enabled: boolean }) => s.enabled).map((s: { id: string }) => s.id), ["openstreetmap", "google_places", "apollo", "web_search"]);
 
     const r = await request(app).post("/api/v1/leads/discover").set(owner.auth).send({ what: "dentist", where: "Pune, India" });
     assert.equal(r.status, 200);
-    const { candidates, sources: report, costMinor } = r.body.data;
+    const { candidates, sources: report, costMinor, disqualified } = r.body.data;
     assert.equal(calls.length, 4, "all four sources searched");
     assert.deepEqual(report.find((s: { source: string }) => s.source === "apollo"), { source: "apollo", ok: false, count: 0, error: "Apollo: API key rejected" });
 
     const names = candidates.map((c: { name: string }) => c.name).sort();
-    assert.deepEqual(names, ["Bright Smiles", "Pearl Dental Studio", "Smile Dental", "Tooth Care"], "merged by domain, closed and directory results dropped");
+    assert.deepEqual(names, ["Bright Smiles", "Smile Dental", "Tooth Care"], "merged by domain; closed, directory and disqualified results dropped");
+    assert.equal(disqualified, 1, "the profile's disqualifier removed Pearl Dental Studio");
     const smile = candidates.find((c: { name: string }) => c.name === "Smile Dental");
     assert.deepEqual(smile.sources, ["openstreetmap", "google_places"]);
     assert.equal(smile.domain, "smiledental.test");
@@ -85,9 +103,15 @@ test("lead discovery: searches every enabled source, merges duplicates, survives
     const usage = await UsageRecord.findOne({ organizationId: owner.organizationId, kind: "discovery" }).lean();
     assert.equal(usage?.costMinor, 6);
 
-    // picking one source; then the daily cap stops further searches
+    // picking one source
     const osmOnly = await request(app).post("/api/v1/leads/discover").set(owner.auth).send({ what: "dentist", where: "Pune", sources: ["openstreetmap"] });
     assert.equal(osmOnly.body.data.costMinor, 0, "OpenStreetMap is free");
+    // the agent searching on its own: every term x area of the niche, least recently searched first
+    const auto = await request(app).post("/api/v1/leads/discover").set(owner.auth).send({ auto: true });
+    assert.equal(auto.status, 200);
+    assert.deepEqual(auto.body.data.queries, [{ what: "Dentist", where: "Pune, India" }, { what: "Dentist", where: "Pune" }]);
+    assert.equal(auto.body.data.costMinor, 12, "two queries x two paid sources that answered");
+    // then the daily cap stops further searches
     assert.equal((await request(app).post("/api/v1/leads/discover").set(owner.auth).send({ what: "dentist", where: "Pune" })).status, 429);
 
     // chosen candidates go through the normal import (dedupe, error report) and straight into research
@@ -96,9 +120,9 @@ test("lead discovery: searches every enabled source, merges duplicates, survives
     }));
     const imp = await request(app).post("/api/v1/leads/import").set(owner.auth).send({ rows, source: "discovery", research: true });
     assert.equal(imp.status, 201);
-    assert.equal(imp.body.data.job.createdRows, 3);
-    assert.equal(await Lead.countDocuments({ organizationId: owner.organizationId, "source.provider": "discovery", status: "research_queued" }), 3);
-    assert.equal(await Workflow.countDocuments({ organizationId: owner.organizationId, type: "lead.research" }), 3);
+    assert.equal(imp.body.data.job.createdRows, 2);
+    assert.equal(await Lead.countDocuments({ organizationId: owner.organizationId, "source.provider": "discovery", status: "research_queued" }), 2);
+    assert.equal(await Workflow.countDocuments({ organizationId: owner.organizationId, type: "lead.research" }), 2);
 
     // other tenants never see the search or its leads
     const other = await createAccount("Other");

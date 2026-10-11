@@ -12,7 +12,7 @@ const PAGES: Record<string, { title: string; body: React.ReactNode }> = {
       <h2>What easySales does</h2>
       <p>easySales researches your leads, scores them against your ideal customer, writes and sends outreach from your own mailbox, handles replies, books meetings from your real calendar, builds demo pages from approved templates and prepares proposals priced from your own price list.</p>
       <h2>Finding leads and reading replies</h2>
-      <p>Under <b>Leads → Find leads</b>, describe a kind of business and a place. easySales searches OpenStreetMap, plus Google Places, Apollo and web search when they are enabled, and shows one merged list. You choose who to add and record why you may contact them; research then reads each business&apos;s website and finds its public contact email.</p>
+      <p>Under <b>Leads → Find leads</b>, pick a kind of business and a place from the search terms and areas in your ideal customer profile (searches outside them are refused), or let the agent search your whole niche. easySales searches OpenStreetMap, plus Google Places, Apollo and web search when they are enabled, and shows one merged list. You choose who to add and record why you may contact them; research then reads each business&apos;s website and finds its public contact email.</p>
       <p>Replies are read from your connected inbox every minute (read-only). Only replies from your leads are opened; other mail is never downloaded or stored.</p>
       <h2>What it will not do</h2>
       <ul>

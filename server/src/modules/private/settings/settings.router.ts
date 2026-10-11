@@ -31,6 +31,7 @@ const BusinessProfileSchema = z.object({
     })).max(50),
     idealCustomerProfile: z.object({
         industries: tags, companySizes: tags, regions: tags, requiredSignals: tags, disqualifiers: tags,
+        searchTerms: z.array(text(100)).max(30).optional(), searchAreas: z.array(text(100)).max(30).optional(),
     }),
     brandVoice: text(500),
     approvedClaims: tags,

@@ -31,6 +31,9 @@ const businessProfileSchema = new mongoose.Schema({
         regions: [String],
         requiredSignals: [String],
         disqualifiers: [String],
+        // the niche lead search is locked to: what to look for ("dentist") and where ("Pune")
+        searchTerms: [String],
+        searchAreas: [String],
     },
 
     // shared with prospects who ask for a meeting (Calendly, Cal.com, Google booking page...)

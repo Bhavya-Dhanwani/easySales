@@ -90,7 +90,8 @@ router.put("/onboarding/icp", authorize("profile.write"), validate(z.object({
     idealCustomerProfile: z.object({ industries: tags, companySizes: tags, regions: tags, requiredSignals: tags, disqualifiers: tags }),
 }).strict()), async (req: Request, res: Response) => {
     const ctx = ctxOf(req);
-    await BusinessProfile.findOneAndUpdate({ organizationId: ctx.organizationId }, { $set: req.body, $inc: { version: 1 } }, { upsert: true });
+    const icp = Object.fromEntries(Object.entries(req.body.idealCustomerProfile).map(([k, v]) => [`idealCustomerProfile.${k}`, v]));
+    await BusinessProfile.findOneAndUpdate({ organizationId: ctx.organizationId }, { $set: icp, $inc: { version: 1 } }, { upsert: true });
     await audit({ organizationId: ctx.organizationId, actorType: "user", actorId: ctx.userId, action: "business_profile.update", outcome: "success", metadata: { via: "onboarding.icp" } });
     return Ok(res, "Saved", await onboardingStatus(ctx.organizationId));
 });

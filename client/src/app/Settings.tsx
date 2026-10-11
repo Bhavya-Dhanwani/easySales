@@ -28,7 +28,7 @@ function Chips({ value, onChange, placeholder }: { value: string[]; onChange: (v
 
 const EMPTY_PROFILE: BusinessProfile = {
   businessName: '', businessType: '', description: '', website: '', services: [],
-  idealCustomerProfile: { industries: [], companySizes: [], regions: [], requiredSignals: [], disqualifiers: [] },
+  idealCustomerProfile: { industries: [], companySizes: [], regions: [], requiredSignals: [], disqualifiers: [], searchTerms: [], searchAreas: [] },
   brandVoice: 'professional, concise, warm', approvedClaims: [], prohibitedClaims: [], caseStudies: [],
 }
 
@@ -135,6 +135,10 @@ export function Business() {
           <label className="field"><span>Buying signals</span><Chips value={p.idealCustomerProfile.requiredSignals} onChange={(v) => icp('requiredSignals', v)} placeholder="Outdated website, hiring…" /></label>
         </div>
         <label className="field"><span>Hard disqualifiers</span><Chips value={p.idealCustomerProfile.disqualifiers} onChange={(v) => icp('disqualifiers', v)} placeholder="Government body, competitor…" /><small>A lead that matches any of these is never contacted.</small></label>
+        <div className="grid-2">
+          <label className="field"><span>Lead search terms</span><Chips value={p.idealCustomerProfile.searchTerms ?? []} onChange={(v) => icp('searchTerms', v)} placeholder="dentist, dental clinic… (Enter)" /><small>Lead search only looks for these.</small></label>
+          <label className="field"><span>Lead search areas</span><Chips value={p.idealCustomerProfile.searchAreas ?? []} onChange={(v) => icp('searchAreas', v)} placeholder="Pune, Mumbai…" /><small>…and only in these places.</small></label>
+        </div>
       </section>
 
       <section className="card stack">

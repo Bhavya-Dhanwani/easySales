@@ -1,6 +1,7 @@
 // Importing modules
 import mongoose from "mongoose";
 import Lead from "../models/lead.model.js";
+import BusinessProfile from "../models/businessProfile.model.js";
 import UsageRecord from "../models/usageRecord.model.js";
 import { request } from "../integrations/core.js";
 import { recordUsage, reserve, settle, release } from "../billing/budget.service.js";
@@ -151,34 +152,95 @@ export function mergeCandidates(found: { source: DiscoverySource; items: Omit<Ca
     return out;
 }
 
+/* --------------------------------- niche --------------------------------- */
+
+type Query = { what: string; where: string };
+const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+async function nicheOf(organizationId: Id) {
+    const icp = (await BusinessProfile.findOne({ organizationId }, { idealCustomerProfile: 1 }).lean())?.idealCustomerProfile;
+    return { searchTerms: icp?.searchTerms ?? [], searchAreas: icp?.searchAreas ?? [], disqualifiers: icp?.disqualifiers ?? [] };
+}
+
 /*
-    Searches every enabled source (or the requested ones) in parallel. A failing source is
-    reported, never fatal. Paid searches are reserved against the spend limit first and
-    metered in the usage ledger; a per-workspace daily cap stops runaway searching.
-    Nothing is saved here: the user picks candidates and imports them.
+    Lead search is locked to the niche the owner configured: a search term and an area from
+    the business profile, nothing else. Enforced here in code, whatever the client or an agent asks.
 */
-export async function discoverLeads(organizationId: Id, userId: string, q: { what: string; where: string; sources?: DiscoverySource[]; limit: number }) {
+async function inNiche(organizationId: Id, userId: string, queries: Query[]) {
+    const niche = await nicheOf(organizationId);
+    if (!niche.searchTerms.length || !niche.searchAreas.length) {
+        throw new ApiError(400, "Add search terms and search areas to your ideal customer (Settings → Business) first: lead search only runs inside your niche.");
+    }
+    return {
+        niche,
+        queries: await Promise.all(queries.map(async (q) => {
+            const what = niche.searchTerms.find((t) => same(t, q.what));
+            const where = niche.searchAreas.find((a) => same(a, q.where));
+            if (what && where) return { what, where };
+            await audit({ organizationId, actorType: "user", actorId: userId, action: "lead.discover", outcome: "denied", metadata: { what: q.what, where: q.where, reason: "outside niche" } });
+            throw new ApiError(403, `"${what ? q.where : q.what}" is outside your niche. Allowed ${what ? `areas: ${niche.searchAreas.join(", ")}` : `search terms: ${niche.searchTerms.join(", ")}`}.`);
+        })),
+    };
+}
+
+// the agent searching on its own: every term x area of the niche, least recently searched first
+export async function nextNicheQueries(organizationId: Id, max: number) {
+    const { searchTerms, searchAreas } = await nicheOf(organizationId);
+    const all = searchTerms.flatMap((what) => searchAreas.map((where) => ({ what, where })));
+    const last = await UsageRecord.aggregate([
+        { $match: { organizationId, kind: "discovery" } },
+        { $group: { _id: "$refId", at: { $max: "$createdAt" } } },
+    ]);
+    const at = new Map(last.map((l) => [String(l._id), new Date(l.at).getTime()]));
+    return all.sort((a, b) => (at.get(`${a.what}|${a.where}`) ?? 0) - (at.get(`${b.what}|${b.where}`) ?? 0)).slice(0, max);
+}
+
+/* -------------------------------- search -------------------------------- */
+
+/*
+    Runs each niche query on every enabled source (or the requested ones) in parallel. A failing
+    source is reported, never fatal. Paid searches are reserved against the spend limit first and
+    metered per query; a per-workspace daily cap stops runaway searching. Businesses matching a
+    disqualifier are dropped. Nothing is saved here: the user picks candidates and imports them.
+*/
+export async function discoverLeads(organizationId: Id, userId: string, q: { queries: Query[]; sources?: DiscoverySource[]; limit: number }) {
+    const { niche, queries } = await inNiche(organizationId, userId, q.queries);
     const chosen = (q.sources?.length ? q.sources : DISCOVERY_SOURCES).filter((s) => SEARCH[s].enabled());
     if (!chosen.length) throw new ApiError(400, "No lead source is enabled. Turn on OpenStreetMap or add a source API key.");
 
     const today = await UsageRecord.countDocuments({ organizationId, kind: "discovery", createdAt: { $gte: startOfUtcDay() } });
-    if (today >= env.DISCOVERY_SEARCHES_PER_DAY) throw new ApiError(429, `Daily lead search limit (${env.DISCOVERY_SEARCHES_PER_DAY}) reached; try again tomorrow.`);
+    if (today + queries.length > env.DISCOVERY_SEARCHES_PER_DAY) throw new ApiError(429, `Daily lead search limit (${env.DISCOVERY_SEARCHES_PER_DAY}) reached; try again tomorrow.`);
 
     const paid = chosen.filter((s) => SEARCH[s].paid);
-    const cost = paid.length * env.DISCOVERY_COST_MINOR;
+    const cost = paid.length * queries.length * env.DISCOVERY_COST_MINOR;
     const reservation = cost > 0 ? await reserve(organizationId, "discovery", cost) : null;
 
-    const results = await Promise.allSettled(chosen.map((s) => SEARCH[s].search(q.what, q.where)));
-    const report = chosen.map((source, i) => {
-        const r = results[i];
-        return r.status === "fulfilled" ? { source, ok: true, count: r.value.length } : { source, ok: false, count: 0, error: (r.reason as Error).message.slice(0, 200) };
+    const jobs = queries.flatMap((query) => chosen.map((source) => ({ query, source })));
+    const results = await Promise.allSettled(jobs.map((j) => SEARCH[j.source].search(j.query.what, j.query.where)));
+    const ran = jobs.map((j, i) => ({ ...j, result: results[i] }));
+
+    const report = chosen.map((source) => {
+        const mine = ran.filter((r) => r.source === source);
+        const failed = mine.find((r) => r.result.status === "rejected");
+        const count = mine.reduce((n, r) => n + (r.result.status === "fulfilled" ? r.result.value.length : 0), 0);
+        return failed && failed.result.status === "rejected" ? { source, ok: false, count, error: (failed.result.reason as Error).message.slice(0, 200) } : { source, ok: true, count };
     });
     // only searches that ran cost money
-    const actual = paid.filter((s) => report.find((r) => r.source === s)?.ok).length * env.DISCOVERY_COST_MINOR;
+    const actual = ran.filter((r) => SEARCH[r.source].paid && r.result.status === "fulfilled").length * env.DISCOVERY_COST_MINOR;
     if (reservation) await (actual ? settle(organizationId, reservation._id, actual) : release(organizationId, reservation._id));
-    await recordUsage(organizationId, { kind: "discovery", quantity: chosen.length, costMinor: actual, provider: chosen.join(","), agent: "discovery" });
+    for (const query of queries) {
+        const mine = ran.filter((r) => r.query === query);
+        await recordUsage(organizationId, {
+            kind: "discovery", quantity: chosen.length, provider: chosen.join(","), agent: "discovery", refId: `${query.what}|${query.where}`,
+            costMinor: mine.filter((r) => SEARCH[r.source].paid && r.result.status === "fulfilled").length * env.DISCOVERY_COST_MINOR,
+        });
+    }
 
-    const candidates = mergeCandidates(chosen.flatMap((source, i) => (results[i].status === "fulfilled" ? [{ source, items: (results[i] as PromiseFulfilledResult<Omit<Candidate, "sources">[]>).value }] : [])))
+    const merged = mergeCandidates(ran.flatMap((r) => (r.result.status === "fulfilled" ? [{ source: r.source, items: r.result.value }] : [])));
+    // the profile's disqualifiers apply before anyone sees the list
+    const bad = niche.disqualifiers.map((d) => d.trim().toLowerCase()).filter((d) => d.length >= 3);
+    const kept = merged.filter((c) => !bad.some((d) => `${c.name} ${c.industry ?? ""}`.toLowerCase().includes(d)));
+    const candidates = kept
         // businesses found by more sources, and with a website, first
         .sort((a, b) => b.sources.length - a.sources.length || Number(Boolean(b.website)) - Number(Boolean(a.website)))
         .slice(0, q.limit);
@@ -192,6 +254,6 @@ export async function discoverLeads(organizationId: Id, userId: string, q: { wha
     const known = new Set(existing.flatMap((l) => [l.company?.domain, l.contact?.email, l.dedupeKey].filter(Boolean) as string[]));
     for (const c of candidates) c.alreadyLead = Boolean((c.domain && known.has(c.domain)) || (c.email && known.has(c.email)) || known.has(`name:${nameKey(c.name)}`));
 
-    await audit({ organizationId, actorType: "user", actorId: userId, action: "lead.discover", outcome: "success", metadata: { what: q.what, where: q.where, sources: report, found: candidates.length, costMinor: actual } });
-    return { candidates, sources: report, costMinor: actual, currency: env.BILLING_CURRENCY };
+    await audit({ organizationId, actorType: "user", actorId: userId, action: "lead.discover", outcome: "success", metadata: { queries, sources: report, found: candidates.length, disqualified: merged.length - kept.length, costMinor: actual } });
+    return { candidates, queries, sources: report, disqualified: merged.length - kept.length, costMinor: actual, currency: env.BILLING_CURRENCY };
 }
