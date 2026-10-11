@@ -12,7 +12,7 @@ type Id = mongoose.Types.ObjectId;
 export interface StartWorkflow {
     organizationId: Id;
     type: (typeof WORKFLOW_TYPES)[number];
-    entityType: "lead" | "conversation" | "proposal" | "prototype";
+    entityType: "lead" | "conversation" | "proposal" | "prototype" | "integration";
     entityId: Id;
     input?: Record<string, unknown>;
     idempotencyKey: string;

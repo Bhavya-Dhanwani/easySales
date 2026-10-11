@@ -1,4 +1,9 @@
 // Importing modules
+import { IntegrationConnection, OAUTH_PROVIDERS, OAuthProvider } from "../../../shared/models/integration.model.js";
+import Workflow from "../../../shared/models/workflow.model.js";
+import { connectionView, disconnect, startConnect, testConnection } from "../../../shared/integrations/connection.service.js";
+import { FIELD_OWNERSHIP, syncErrors, syncStatus } from "../../../shared/integrations/sync.service.js";
+import { startWorkflow } from "../../../shared/workflows/workflow.service.js";
 import { alert } from "../../../shared/alerts/alert.service.js";
 import express, { Request, Response } from "express";
 import dns from "node:dns/promises";
@@ -62,12 +67,18 @@ const view = (i: InstanceType<typeof EmailIntegration> | null) => i && {
 router.get("/", authorize("org.manage"), async (req: Request, res: Response) => {
     const ctx = ctxOf(req);
     const email = await EmailIntegration.findOne({ organizationId: ctx.organizationId });
+    const conns = await IntegrationConnection.find({ organizationId: ctx.organizationId }).lean();
+    const oauth = (provider: string, kind: string) => {
+        const c = conns.find((x) => x.provider === provider);
+        return c ? { kind, ...connectionView(c), details: connectionView(c) } : { kind, provider, status: "disconnected", scopes: [], lastHealthCheckAt: null, details: null };
+    };
     return Ok(res, "Integrations", {
         integrations: [
-            { provider: "email", status: email ? (email.status === "connected" ? "connected" : email.status === "error" ? "degraded" : "disconnected") : "disconnected", scopes: ["send", "receive_webhook"], lastHealthCheckAt: email?.lastVerifiedAt ?? null, details: view(email) },
-            { provider: "crm", status: "not_available", scopes: [], lastHealthCheckAt: null, details: null },
-            { provider: "calendar", status: "not_available", scopes: [], lastHealthCheckAt: null, details: null },
+            { kind: "email", provider: "email", status: email ? (email.status === "connected" ? "connected" : email.status === "error" ? "degraded" : "disconnected") : "disconnected", scopes: ["send", "receive_webhook"], lastHealthCheckAt: email?.lastVerifiedAt ?? null, details: view(email) },
+            oauth("hubspot", "crm"),
+            oauth("google_calendar", "calendar"),
         ],
+        fieldOwnership: FIELD_OWNERSHIP,
     });
 });
 
@@ -167,6 +178,82 @@ router.delete("/email", authorize("org.manage"), async (req: Request, res: Respo
     if (!removed) throw new NotFound("No email account connected");
     await audit({ organizationId: ctx.organizationId, actorType: "user", actorId: ctx.userId, action: "integration.email.disconnect", outcome: "success" });
     return Ok(res, "Email account disconnected");
+});
+
+/* --------------------------- OAuth providers --------------------------- */
+
+const providerOf = (req: Request) => {
+    const p = String(req.params.provider);
+    if (!(OAUTH_PROVIDERS as readonly string[]).includes(p)) throw new NotFound("Unknown integration");
+    return p as OAuthProvider;
+};
+
+/*
+    @route POST /api/v1/integrations/:provider/connect
+    @desc Start OAuth (state + PKCE). Returns the provider's consent URL to open.
+*/
+router.post("/:provider/connect", authorize("org.manage"), async (req: Request, res: Response) => {
+    const ctx = ctxOf(req);
+    return Ok(res, "Open the consent page", await startConnect(ctx.organizationId, ctx.userId, providerOf(req)));
+});
+
+router.post("/:provider/test", authorize("org.manage"), async (req: Request, res: Response) => {
+    const ctx = ctxOf(req);
+    return Ok(res, "Connection checked", await testConnection(ctx.organizationId, providerOf(req)));
+});
+
+router.delete("/:provider", authorize("org.manage"), async (req: Request, res: Response) => {
+    const ctx = ctxOf(req);
+    await disconnect(ctx.organizationId, providerOf(req), ctx.userId);
+    return Ok(res, "Disconnected; access was revoked and stored tokens deleted");
+});
+
+const SettingsSchema = z.object({
+    stageOwner: z.enum(["platform", "crm"]).optional(),
+    timezone: z.string().max(60).refine((tz) => { try { new Intl.DateTimeFormat("en", { timeZone: tz }); return true; } catch { return false; } }, "Unknown timezone").optional(),
+    workStart: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
+    workEnd: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
+    workDays: z.array(z.number().int().min(0).max(6)).min(1).max(7).optional(),
+    meetingMinutes: z.number().int().min(10).max(240).optional(),
+    bufferMinutes: z.number().int().min(0).max(120).optional(),
+    minNoticeHours: z.number().int().min(0).max(336).optional(),
+}).strict();
+
+router.patch("/:provider/settings", authorize("org.manage"), validate(SettingsSchema), async (req: Request, res: Response) => {
+    const ctx = ctxOf(req);
+    const provider = providerOf(req);
+    const set = Object.fromEntries(Object.entries(req.body).map(([k, v]) => [`settings.${k}`, v]));
+    const conn = await IntegrationConnection.findOneAndUpdate({ organizationId: ctx.organizationId, provider }, set, { new: true }).lean();
+    if (!conn) throw new NotFound(`${provider} is not connected`);
+    await audit({ organizationId: ctx.organizationId, actorType: "user", actorId: ctx.userId, action: "integration.settings", targetType: "integration", targetId: String(conn._id), outcome: "success", metadata: req.body });
+    return Ok(res, "Settings saved", { integration: connectionView(conn) });
+});
+
+/*
+    @route POST /api/v1/integrations/:provider/sync
+    @desc Start (or resume) an incremental CRM import as a durable job (202)
+*/
+router.post("/:provider/sync", authorize("org.manage"), async (req: Request, res: Response) => {
+    const ctx = ctxOf(req);
+    if (providerOf(req) !== "hubspot") throw new NotFound("Only CRM integrations sync records");
+    const conn = await IntegrationConnection.findOne({ organizationId: ctx.organizationId, provider: "hubspot", status: { $ne: "disconnected" } }).lean();
+    if (!conn) throw new NotFound("HubSpot is not connected");
+    const running = await Workflow.findOne({ organizationId: ctx.organizationId, type: "integration.sync", status: { $in: ["queued", "running"] } }).lean();
+    const { workflow } = running ? { workflow: running } : await startWorkflow({
+        organizationId: ctx.organizationId, type: "integration.sync", entityType: "integration", entityId: conn._id,
+        idempotencyKey: `crm-sync:${conn._id}:${Date.now()}`, startedBy: ctx.userId, actor: { type: "user", id: ctx.userId },
+    });
+    return res.status(202).json({ success: true, status: 202, message: running ? "A sync is already running" : "Sync started", data: { workflowId: workflow._id } });
+});
+
+router.get("/:provider/sync-status", authorize("org.manage"), async (req: Request, res: Response) => {
+    const ctx = ctxOf(req);
+    return Ok(res, "Sync status", { status: await syncStatus(ctx.organizationId, providerOf(req)) });
+});
+
+router.get("/:provider/errors", authorize("org.manage"), async (req: Request, res: Response) => {
+    const ctx = ctxOf(req);
+    return Ok(res, "Sync errors", await syncErrors(ctx.organizationId, providerOf(req)));
 });
 
 export default router;

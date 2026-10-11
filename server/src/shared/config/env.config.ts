@@ -54,6 +54,12 @@ const envSchema = z.object({
     // platform-wide emergency brake on total daily spend across all tenants (0 = off)
     GLOBAL_DAILY_SPEND_CAP_MINOR: z.coerce.number().int().min(0).default(0),
 
+    // Sprint 8 integrations: HubSpot public app (OAuth + webhook signing uses the client secret)
+    HUBSPOT_CLIENT_ID: z.string().default(""),
+    HUBSPOT_CLIENT_SECRET: z.string().default(""),
+    // public origin of this API, used for OAuth redirect URIs (defaults to FRONTEND_URL when served together)
+    PUBLIC_API_URL: z.union([z.literal(""), z.string().url()]).default(""),
+
     // HMAC secret for the billing provider's webhook (POST /api/webhooks/billing)
     BILLING_WEBHOOK_SECRET: z.string().default(""),
 

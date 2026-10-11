@@ -1,4 +1,5 @@
 // Importing modules
+import { hubspotWebhookRouter, oauthRouter } from "../../modules/public/webhooks/integrations.public.router.js";
 import express, { Request, Response, NextFunction } from "express";
 import healthRouter from "./health.router.js";
 import authRouter from "../../modules/public/auth/auth.router.js";
@@ -31,6 +32,8 @@ const router = express.Router();
 router.use("/health", healthRouter);
 router.use("/auth", authRouter);
 router.use("/webhooks/billing", billingWebhookRouter);
+router.use("/webhooks/hubspot", hubspotWebhookRouter);
+router.use("/integrations/oauth", oauthRouter);
 router.use("/webhooks", webhooksRouter);
 router.use("/preview", previewRouter);
 router.use("/admin", adminRouter);

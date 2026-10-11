@@ -1,4 +1,7 @@
 // Importing modules
+import { Meeting } from "../../../shared/models/integration.model.js";
+import { availability, bookMeeting, cancelMeeting, rescheduleMeeting } from "../../../shared/integrations/calendar.service.js";
+import Created from "../../../shared/responses/Created.response.js";
 import { recordStage } from "../../../shared/analytics/analytics.service.js";
 import express, { Request, Response } from "express";
 import { z } from "zod";
@@ -290,6 +293,45 @@ router.get("/proposals/:id/versions", authorize("proposals.read"), async (req: R
     const { ctx, proposal } = await ownProposal(req);
     const versions = await Proposal.find({ organizationId: ctx.organizationId, leadId: proposal.leadId }, { body: 0 }).sort({ version: -1 }).limit(50).lean();
     return Ok(res, "Versions", { versions });
+});
+
+/* ------------------------------- calendar ------------------------------- */
+
+/*
+    @route GET /api/v1/calendar/availability?days=7
+    @desc Real free slots: working hours minus the calendar's busy time and meetings already held
+*/
+router.get("/calendar/availability", authorize("conversations.read"), async (req: Request, res: Response) => {
+    const ctx = ctxOf(req);
+    return Ok(res, "Availability", await availability(ctx.organizationId, { days: Number(req.query.days) || 7 }));
+});
+
+router.get("/calendar/events", authorize("conversations.read"), async (req: Request, res: Response) => {
+    const ctx = ctxOf(req);
+    const filter: Record<string, unknown> = { organizationId: ctx.organizationId };
+    if (typeof req.query.leadId === "string") filter.leadId = oid(req.query.leadId);
+    return Ok(res, "Meetings", { meetings: await Meeting.find(filter).sort({ start: -1 }).limit(100).lean() });
+});
+
+/*
+    @route POST /api/v1/calendar/events
+    @desc Book a slot. Inviting the prospect (an external attendee) must be asked for explicitly.
+*/
+router.post("/calendar/events", authorize("conversations.write"), validate(z.object({
+    leadId: z.string().regex(/^[a-f0-9]{24}$/), start: z.coerce.date(), inviteProspect: z.boolean(), title: z.string().max(120).optional(),
+}).strict()), async (req: Request, res: Response) => {
+    const ctx = ctxOf(req);
+    return Created(res, "Meeting booked", { meeting: await bookMeeting(ctx.organizationId, req.body, ctx.userId) });
+});
+
+router.patch("/calendar/events/:id", authorize("conversations.write"), validate(z.object({ start: z.coerce.date() }).strict()), async (req: Request, res: Response) => {
+    const ctx = ctxOf(req);
+    return Ok(res, "Meeting moved", { meeting: await rescheduleMeeting(ctx.organizationId, String(oid(req.params.id)), req.body.start, ctx.userId) });
+});
+
+router.delete("/calendar/events/:id", authorize("conversations.write"), async (req: Request, res: Response) => {
+    const ctx = ctxOf(req);
+    return Ok(res, "Meeting cancelled", { meeting: await cancelMeeting(ctx.organizationId, String(oid(req.params.id)), ctx.userId, "Cancelled by the business") });
 });
 
 export default router;

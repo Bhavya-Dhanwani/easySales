@@ -1,4 +1,5 @@
 // Importing modules
+import { offerableSlots } from "../../shared/integrations/calendar.service.js";
 import { recordStage } from "../../shared/analytics/analytics.service.js";
 import mongoose from "mongoose";
 import { Annotation, END, START, StateGraph, interrupt } from "@langchain/langgraph";
@@ -78,6 +79,8 @@ async function classify(s: S) {
     const result = await handleInbound(
         { organizationId: s.organizationId, workflowId: s.workflowId, correlationId: s.correlationId },
         lead, thread.reverse(), profile, config.pricing.currency,
+        // real free slots from the connected calendar (null when none): the agent never invents times
+        await offerableSlots(s.organizationId),
     );
 
     inbound.intent = result.intent;

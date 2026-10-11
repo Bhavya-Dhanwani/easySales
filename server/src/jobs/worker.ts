@@ -1,4 +1,6 @@
 // Importing modules
+import { processIntegrationEvents, pullSync, pushLead } from "../shared/integrations/sync.service.js";
+import { reconcileMeetings } from "../shared/integrations/calendar.service.js";
 import { healthCheckIntegrations } from "../modules/private/integrations/integrations.router.js";
 import { entitlementsFor, quotaLeft, QUOTA_HOLD, rollOverSubscriptions } from "../shared/billing/subscription.service.js";
 import { recordStage } from "../shared/analytics/analytics.service.js";
@@ -44,7 +46,7 @@ const SEND_LEASE_MS = 2 * 60_000;
 const QUIET_HOURS_RETRY_MS = 15 * 60_000;
 
 // errors that mean "do not retry, a human has to fix configuration"
-const PERMANENT_CODES = new Set(["LLM_NOT_CONFIGURED", "BUDGET_EXCEEDED"]);
+const PERMANENT_CODES = new Set(["LLM_NOT_CONFIGURED", "BUDGET_EXCEEDED", "RECONNECT_REQUIRED"]);
 
 type WorkflowDoc = InstanceType<typeof Workflow>;
 
@@ -172,6 +174,14 @@ async function executeWorkflow(wf: WorkflowDoc) {
             await Workflow.updateOne(scope, { currentStep: "extract" });
             const r = await runRequirementsExtraction(wf.organizationId, wf.entityId, wf._id.toString(), wf.correlationId);
             await Workflow.updateOne(scope, { status: "completed", lockedUntil: null, currentStep: "done", result: { outcome: "requirements_extracted", ...r } });
+        } else if (wf.type === "integration.sync") {
+            await Workflow.updateOne(scope, { currentStep: "sync" });
+            const r = await pullSync(wf.organizationId);
+            await Workflow.updateOne(scope, { status: "completed", lockedUntil: null, currentStep: "done", result: { outcome: "synced", ...r } });
+        } else if (wf.type === "integration.push") {
+            await Workflow.updateOne(scope, { currentStep: "push" });
+            const r = await pushLead(wf.organizationId, wf.entityId);
+            await Workflow.updateOne(scope, { status: "completed", lockedUntil: null, currentStep: "done", result: r });
         } else if (wf.type === "prototype.build") {
             await Workflow.updateOne(scope, { currentStep: "build" });
             const r = await buildPrototype(wf.organizationId, wf.entityId, wf._id.toString(), wf.correlationId);
@@ -191,7 +201,7 @@ async function executeWorkflow(wf: WorkflowDoc) {
             lastError: err.message?.slice(0, 1000),
             // exponential backoff: 30s, 60s, 120s...
             // exponential backoff with jitter so retries of many jobs do not arrive together
-            nextRunAt: new Date(Date.now() + 30_000 * 2 ** (wf.attempts - 1) * (0.5 + Math.random())),
+            nextRunAt: new Date(Date.now() + (err.code === "RATE_LIMITED" ? ((error as { retryAfterSec?: number }).retryAfterSec ?? 30) * 1000 : 30_000 * 2 ** (wf.attempts - 1) * (0.5 + Math.random()))),
         });
         if (giveUp) {
             if (wf.type === "prototype.build") await failPrototype(wf.organizationId, wf.entityId, err.code ?? "ERROR");
@@ -386,6 +396,7 @@ export async function runOnce({ maxWorkflows = 5, maxMessages = 20, force = fals
         await dispatchMessage(msg);
     }
     await task("provider_events", processPendingEvents);
+    await task("integration_events", () => processIntegrationEvents());
     await task("expire_previews", () => expireStalePreviews());
     await task("expire_proposals", () => expireProposals());
     await task("release_reservations", () => releaseExpiredReservations());
@@ -401,6 +412,7 @@ export async function runOnce({ maxWorkflows = 5, maxMessages = 20, force = fals
         }
         await task("ops_checks", () => runOpsChecks());
         await task("integration_health", () => healthCheckIntegrations());
+        await task("calendar_reconcile", () => reconcileMeetings());
     }
     if (Date.now() - lastRetentionRun > 24 * 3600_000) {
         lastRetentionRun = Date.now();

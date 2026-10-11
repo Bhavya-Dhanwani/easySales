@@ -42,6 +42,7 @@ export async function handleInbound(
     thread: { direction: string; subject?: string | null; body: string }[],
     profile: ProfileForPrompt & { meetingLink?: string | null },
     currency: string,
+    slots?: string[] | null,
 ) {
 
     const transcript = thread.map((m) => `[${m.direction === "inbound" ? "PROSPECT" : "US"}] ${m.subject ? `(${m.subject}) ` : ""}${m.body}`).join("\n\n");
@@ -55,7 +56,9 @@ ${UNTRUSTED_RULES}
 Intents: interested, meeting_request, pricing_question, objection, not_interested, opt_out, complaint, out_of_office, unclear.
 Reply rules:
 - Answer only with approved business facts. For pricing, you may quote the "from" prices below and say a tailored proposal follows a short discovery call; never invent discounts or totals.
-- Meeting requests: ${profile.meetingLink ? `share this booking link: ${profile.meetingLink}` : "offer two time windows and ask which suits them; do not claim a booking was made"}.
+- Meeting requests: ${slots?.length
+        ? `offer exactly these free slots (copy them verbatim, never invent others) and ask which suits them; do not claim a booking was made: ${slots.join(" | ")}`
+        : profile.meetingLink ? `share this booking link: ${profile.meetingLink}` : "ask which days and times suit them; never propose specific times yourself and do not claim a booking was made"}.
 - Objections: respectful, brief, one relevant point, no pressure.
 - Never promise delivery dates, guarantees or features not listed. Under 120 words. No signature or unsubscribe line.
 - Use "escalate" when unsure, when the prospect is upset, or for anything legal or contractual.

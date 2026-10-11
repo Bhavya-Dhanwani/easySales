@@ -123,6 +123,9 @@ const leadSchema = new mongoose.Schema({
     // the onboarding rehearsal lead: its only contact is the workspace user themself
     isTest: { type: Boolean, default: false },
 
+    // the CRM company this lead works at (company fields are CRM-owned once linked)
+    crmCompanyId: String,
+
     // set once when a won deal is handed over to delivery
     handoff: {
         proposalId: { type: mongoose.Schema.Types.ObjectId, ref: "Proposal" },
