@@ -29,6 +29,7 @@ proposal ─► price book + tax + payment schedule (code) ─► Proposal agent
   - Durable, resumable sync with explicit field ownership and duplicate-safe matching.
   - Verified, deduplicated webhooks with replay protection; encrypted OAuth tokens (state + PKCE).
   - Meeting booking only from real free slots.
+- **Next best action**: a pure decision core derives the sales state from records and lists the valid actions. The model may only choose among them. Autonomy levels are enforced server-side, events trigger idempotent evaluations, and approvals are bound to the payload and the state, with atomic claims.
 - **Operations**: request ids flow into workflow correlation ids and structured logs (secrets redacted); readiness checks; alerts for provider outages, stalled queues, API errors, abnormal spend and failed scheduled tasks; an operators' console for metrics, flags and dead letters.
 - **Multi-tenancy**: every tenant-owned model uses a plugin that refuses any query without `organizationId`. Org context and roles are resolved server-side from memberships. Audit events are append-only.
 

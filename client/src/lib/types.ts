@@ -10,8 +10,8 @@ export interface OrgSummary { id: string; name: string; role: Role }
 
 export type Role = 'owner' | 'admin' | 'sales_manager' | 'sales_rep' | 'developer' | 'viewer'
 
-export type Stage = 'new' | 'qualified' | 'discovery' | 'proposal' | 'negotiation' | 'won' | 'lost'
-export const STAGES: Stage[] = ['new', 'qualified', 'discovery', 'proposal', 'negotiation', 'won', 'lost']
+export type Stage = 'new' | 'qualified' | 'discovery' | 'proposal' | 'negotiation' | 'nurture' | 'won' | 'lost'
+export const STAGES: Stage[] = ['new', 'qualified', 'discovery', 'proposal', 'negotiation', 'nurture', 'won', 'lost']
 
 export interface Evidence { claim: string; sourceUrl?: string; confidence?: number; verified: boolean }
 
@@ -170,7 +170,7 @@ export interface Approval {
   targetType: string
   targetId: string
   leadId?: string
-  payload: { to?: string; subject?: string; body?: string; totalMinor?: number; discountPercent?: number; templateId?: string; requirementsVersion?: number; budgetMinorUnits?: number; currency?: string }
+  payload: { to?: string; subject?: string; body?: string; totalMinor?: number; discountPercent?: number; templateId?: string; requirementsVersion?: number; budgetMinorUnits?: number; currency?: string; action?: string; params?: Record<string, unknown> }
   payloadHash: string
   reasons: string[]
   status: string

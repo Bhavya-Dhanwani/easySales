@@ -23,6 +23,12 @@ For whoever is on call for easySales during the pilot. Keep it short and current
 
 Kept under human control throughout: exceptional pricing, contracts, payments, production deployments of client work.
 
+## Autonomy rollout
+
+- New workspaces start at **Level 1 (Copilot)** with event-driven automation off: the engine recommends and asks.
+- Move a pilot to **Level 2** after a week of approvals that needed no edits. Move to **Level 3** only for workflows that passed evaluation (`npm run eval` covers the decision guardrails).
+- An escalation pauses that opportunity. A human handles it and presses **Resume**; the reply they took over is not re-escalated.
+
 ## Alerts and first response
 
 Alerts go to the logs, the tenant's audit log (tenant alerts) and `ALERT_WEBHOOK_URL` (Slack/Discord).

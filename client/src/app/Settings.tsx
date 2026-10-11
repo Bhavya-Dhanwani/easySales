@@ -171,6 +171,34 @@ export function Business() {
 
 /* ------------------------------ policies ------------------------------ */
 
+// how far the next-best-action engine may act on its own (saved as its own policy version)
+function AutonomySettings() {
+  const toast = useToast()
+  const { data, reload } = useLoad(() => api<{ automation: { level: 1 | 2 | 3; eventDriven: boolean; inactivityDays: number } }>('/v1/automation-settings'), [])
+  if (!data) return null
+  const a = data.automation
+  const save = async (next: typeof a) => { try { await api('/v1/automation-settings', { method: 'PUT', body: next }); toast('Autonomy saved'); reload() } catch (e) { toast((e as Error).message, true) } }
+  const LEVELS: [1 | 2 | 3, string, string][] = [
+    [1, 'Copilot', 'Researches and recommends; a human approves every external action.'],
+    [2, 'Supervised', 'Handles routine replies, questions and follow-ups; demos, proposals and closing need approval.'],
+    [3, 'Bounded', 'Also builds demos within budget and closes declined deals; proposals still need a human.'],
+  ]
+  return (
+    <section className="card stack">
+      <div className="label">Next-best-action autonomy</div>
+      <div className="grid-3">{LEVELS.map(([n, t, d]) => (
+        <label key={n} className="card tight stack sm" style={{ cursor: 'pointer', borderColor: a.level === n ? 'var(--forest-3)' : undefined }}>
+          <span className="row-flex"><input type="radio" checked={a.level === n} onChange={() => save({ ...a, level: n })} /><b>Level {n} · {t}</b></span>
+          <span className="small muted">{d}</span>
+        </label>
+      ))}</div>
+      <label className="check"><input type="checkbox" checked={a.eventDriven} onChange={(e) => save({ ...a, eventDriven: e.target.checked })} /> React to events automatically (replies, meetings, proposals, inactivity)</label>
+      <label className="field" style={{ maxWidth: 260 }}><span>Treat as inactive after (days)</span><input className="input" type="number" min={1} max={90} defaultValue={a.inactivityDays} onBlur={(e) => save({ ...a, inactivityDays: Math.min(90, Math.max(1, Number(e.target.value) || 7)) })} /></label>
+      <small className="muted">At every level: opt-outs, budgets, sending caps, approved claims and pricing rules are enforced by code, and the AI can never approve its own actions.</small>
+    </section>
+  )
+}
+
 export function Policies() {
   const toast = useToast()
   const { org } = useAuth()
@@ -230,6 +258,8 @@ export function Policies() {
         </div>
         <label className="check"><input type="checkbox" checked={c.proposals.autoSend} onChange={(e) => setC({ ...c, proposals: { autoSend: e.target.checked } })} /> Send in-policy proposals without approval</label>
       </section>
+
+      <AutonomySettings />
 
       <section className="card stack">
         <div className="label">AI budget</div>

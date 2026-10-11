@@ -276,6 +276,41 @@ function ProposalCard({ p, onChange }: { p: Proposal; onChange: () => void }) {
   )
 }
 
+interface Decision { _id: string; action: string; reason: string; state: string; evidenceIds: string[]; missingInformation: string[]; policyDecision: string; policyReason?: string; status: string; outcome?: string; decidedBy: string; trigger: string; createdAt: string }
+
+// what the agent will do next, why, and whether policy lets it
+function NextActionCard({ leadId }: { leadId: string }) {
+  const toast = useToast()
+  const { data, reload } = useLoad(() => api<{ decisions: Decision[]; state: string; paused: boolean; candidates: { action: string; reason: string }[] }>(`/v1/opportunities/${leadId}/decisions`), [leadId])
+  if (!data) return null
+  const run = async (fn: () => Promise<unknown>, ok: string) => { try { await fn(); toast(ok); reload() } catch (e) { toast((e as Error).message, true) } }
+  const last = data.decisions[0]
+  return (
+    <section className="card stack">
+      <div className="row-flex between">
+        <span className="row-flex"><span className="h2">Next best action</span><span className="badge plain">{human(data.state)}</span>{data.paused && <Badge status="pending">paused</Badge>}</span>
+        <span className="row-flex">
+          <button className="btn sm" onClick={() => run(() => api(`/v1/opportunities/${leadId}/evaluate-next-action`, { method: 'POST' }), 'Evaluated')}>Evaluate now</button>
+          {data.paused
+            ? <button className="btn ghost sm" onClick={() => run(() => api(`/v1/opportunities/${leadId}/resume-automation`, { method: 'POST' }), 'Automation resumed')}>Resume</button>
+            : <button className="btn ghost sm" onClick={() => run(() => api(`/v1/opportunities/${leadId}/pause-automation`, { body: {} }), 'Automation paused')}>Pause</button>}
+        </span>
+      </div>
+      <div className="small"><span className="label">Valid now · </span>{data.candidates.map((c) => human(c.action)).join(' · ')}</div>
+      {last && (
+        <div className="card tight stack sm" style={{ background: 'var(--bg)' }}>
+          <div className="row-flex between"><b>{human(last.action)}</b><span className="row-flex"><Badge status={last.policyDecision === 'allowed' ? 'approved' : last.policyDecision === 'blocked' ? 'failed' : 'pending'}>{human(last.policyDecision)}</Badge><Badge status={last.status === 'failed' ? 'failed' : 'plain'}>{last.status}</Badge></span></div>
+          <span className="small">{last.reason}</span>
+          {!!last.evidenceIds.length && <span className="small muted">Evidence: {last.evidenceIds.join(', ')}</span>}
+          {!!last.missingInformation.length && <span className="small muted">Missing: {last.missingInformation.join('; ')}</span>}
+          <span className="small muted">{last.policyReason}{last.outcome ? ` · ${last.outcome}` : ''} · {last.decidedBy === 'model' ? 'chosen by the model among valid actions' : 'decided by rules'} · {human(last.trigger)} · {ago(last.createdAt)}</span>
+        </div>
+      )}
+      {data.decisions.length > 1 && <details><summary className="small muted">History ({data.decisions.length})</summary>{data.decisions.slice(1, 20).map((d) => <div key={d._id} className="small" style={{ borderTop: '1px solid var(--line)', padding: '4px 0' }}>{human(d.action)} · {human(d.policyDecision)} · {d.reason} <span className="muted">· {ago(d.createdAt)}</span></div>)}</details>}
+    </section>
+  )
+}
+
 interface MeetingRow { _id: string; start: string; end: string; timezone: string; status: string; meetLink?: string; inviteProspect: boolean }
 
 // book from real free slots only; the prospect is invited only when you tick it
@@ -335,6 +370,7 @@ export default function OpportunityWorkspace({ leadId }: { leadId: string }) {
 
   return (
     <div className="stack lg">
+      <NextActionCard leadId={leadId} />
       <RequirementsCard leadId={leadId} doc={data.requirements} versions={data.requirementVersions} onChange={reload} />
       <PrototypesCard leadId={leadId} ws={data} onChange={reload} />
       <section className="stack">

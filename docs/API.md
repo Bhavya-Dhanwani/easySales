@@ -159,6 +159,31 @@ Each lead's qualification now carries `priority` (from `qualification.highPriori
 
 The reply agent offers meeting times only from these free slots and never invents availability.
 
+## Next best action & autonomy (Sprint 9)
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/v1/opportunities/:id/evaluate-next-action` | decide now and apply policy; returns the recorded decision |
+| GET | `/v1/opportunities/:id/decisions` | decisions (action, reason, evidence ids, missing information, policy decision, status, rules vs model), current sales state, actions valid right now |
+| POST | `/v1/opportunities/:id/pause-automation` · `/resume-automation` | pausing expires pending engine approvals and stops follow-ups; resuming marks the reply a human took over as handled, then re-evaluates |
+| GET / PUT | `/v1/automation-settings` | `{ level: 1 \| 2 \| 3, eventDriven, inactivityDays }` (published as a policy version; default level 1, events off) |
+| GET / POST | `/v1/approvals`, `/v1/approvals/:id/approve \| reject` | engine actions appear as `sales.action`. Approval is bound to a payload hash and a state fingerprint (changed state → 409, re-evaluate) and claimed atomically (two simultaneous approvals: one 409) |
+
+**How a decision is made.**
+1. **Facts are read from records:** stage, outreach status, suppression, messages, requirements, demo, proposal, meetings, pending approvals and work in progress.
+2. **The sales state is derived:** new, qualified, contacted, engaged, discovery, meeting_scheduled, solution_design, proposal_sent, negotiation, nurture, won or lost.
+3. **Code lists the valid actions**, with hard stops first: opted out, suppressed, closed, paused or test → `wait`.
+4. **One valid action:** rules decide. **Several:** the model picks one and explains it; anything outside the list is rejected, and only offered evidence ids are kept.
+5. **Authorization is server-side by autonomy level:**
+   - Level 1: research only; every external action needs approval.
+   - Level 2: also routine replies, questions, follow-ups and meeting offers.
+   - Level 3: also demo builds within budget and closing declined deals.
+   - Proposals always need a human, at every level.
+6. **Execution goes through the existing gates** (message policy, caps, quiet hours, budgets, demo eligibility, pricing engine).
+
+Requested discounts are parsed by code: within the limit, a proposal revision is drafted, priced by the pricing engine and approved by a human; over the limit, the decision escalates. "Won" needs acceptance evidence (handoff), never a status edit or a message.
+
+**Events** (when `eventDriven` is on): lead.researched, lead.qualified, email.delivered, conversation.reply_received, conversation.opted_out, meeting.booked, meeting.cancelled, prototype.ready, proposal.sent, proposal.accepted, opportunity.inactive (weekly). Each becomes one idempotent evaluation job, so a duplicated event never produces a second decision or action.
+
 ## Outreach, conversations, proposals (earlier sprints)
 `POST /v1/leads/:id/run` (research → qualify → outreach), `GET/POST /v1/approvals[/:id/approve|reject]`, `PATCH /v1/approvals/:id` (edit a draft), `GET /v1/conversations[/:id]`, `POST /v1/conversations/:id/inbound|reply`, `POST /v1/leads/:id/proposals`, `POST /v1/proposals/:id/send`, `PATCH /v1/proposals/:id`.
 

@@ -218,6 +218,12 @@ function ApprovalCard({ a, onDone }: { a: Approval; onDone: () => void }) {
             <pre className="body">{body}</pre>
           </div>
         )
+      ) : a.targetType === 'decision' ? (
+        <div className="card tight" style={{ background: 'var(--bg)' }}>
+          <div className="small">Next best action: <b>{human(a.payload.action)}</b>{a.payload.params?.discountPercent !== undefined ? ` · ${String(a.payload.params.discountPercent)}% discount (priced by your pricing rules)` : ''}</div>
+          {Array.isArray(a.payload.params?.questions) && <ol className="small" style={{ margin: '6px 0 0' }}>{(a.payload.params!.questions as string[]).map((q) => <li key={q}>{q}</li>)}</ol>}
+          <div className="small muted" style={{ marginTop: 6 }}>Runs only if the opportunity is still in the state you are looking at; otherwise it is re-evaluated.</div>
+        </div>
       ) : a.targetType === 'prototype' ? (
         <div className="card tight" style={{ background: 'var(--bg)' }}>
           <div className="row-flex between"><span className="small">Demo build · {human(a.payload.templateId)} · requirements v{a.payload.requirementsVersion}</span><span className="mono">budget {money(a.payload.budgetMinorUnits ?? 0, a.payload.currency)}</span></div>
@@ -230,7 +236,7 @@ function ApprovalCard({ a, onDone }: { a: Approval; onDone: () => void }) {
       )}
       {!editing && (
         <div className="row-flex">
-          <button className="btn lime" disabled={busy} onClick={() => run(() => api(`/v1/approvals/${a._id}/approve`, { body: { payloadHash: hash } }), a.targetType === 'prototype' ? 'Approved, building now' : 'Approved, sending shortly')}>{a.targetType === 'prototype' ? 'Approve build' : 'Approve & send'}</button>
+          <button className="btn lime" disabled={busy} onClick={() => run(() => api(`/v1/approvals/${a._id}/approve`, { body: { payloadHash: hash } }), a.targetType === 'prototype' ? 'Approved, building now' : a.targetType === 'decision' ? 'Approved, running now' : 'Approved, sending shortly')}>{a.targetType === 'prototype' ? 'Approve build' : a.targetType === 'decision' ? 'Approve action' : 'Approve & send'}</button>
           {isMessage && <button className="btn ghost" disabled={busy} onClick={() => setEditing(true)}>Edit</button>}
           <button className="btn danger" disabled={busy} onClick={() => run(() => api(`/v1/approvals/${a._id}/reject`, { body: {} }), 'Rejected')}>Reject</button>
           <span className="small muted mono" title="The approval only authorizes this exact content">#{hash.slice(0, 8)}</span>
