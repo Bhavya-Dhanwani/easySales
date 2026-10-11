@@ -3,7 +3,7 @@ import { recordStage } from "../analytics/analytics.service.js";
 import mongoose from "mongoose";
 import Lead from "../models/lead.model.js";
 import BusinessProfile from "../models/businessProfile.model.js";
-import { getCurrentPolicy } from "../policy/policy.service.js";
+import { getCurrentPolicy, isSuppressed } from "../policy/policy.service.js";
 import { audit } from "../audit/audit.service.js";
 import { calculateLeadScore, CRITERIA, CriterionId, decideStatus, DEFAULT_WEIGHTS, Match } from "../qualification/scoring.js";
 import { researchLead } from "../../agents/research.agent.js";
@@ -96,6 +96,9 @@ export async function runResearch(opts: { organizationId: Id; leadId: Id; workfl
     };
     if (!lead.company.industry && r.industry) set["company.industry"] = r.industry;
     if (!lead.company.employeeCount && r.employeeCount) set["company.employeeCount"] = r.employeeCount;
+    // ponytail: dedupeKey stays the creation key (domain/name); a later import of this business by email alone is not matched (by website it is)
+    const foundEmail = !lead.contact?.email && r.contactEmail && !(await isSuppressed(organizationId, r.contactEmail)) ? r.contactEmail : undefined;
+    if (foundEmail) set["contact.email"] = foundEmail;
 
     const written = await Lead.updateOne({ organizationId, _id: leadId, ...notNewer }, { $set: set });
     if (!written.matchedCount) return { status, stale: true };
@@ -110,7 +113,7 @@ export async function runResearch(opts: { organizationId: Id; leadId: Id; workfl
         organizationId, actorType: "agent", actorId: "research", action: "lead.qualified",
         targetType: "lead", targetId: String(leadId), outcome: "success", correlationId: opts.correlationId,
         policyVersion: qualification.policyVersion,
-        metadata: { status, score: qualification.score, evidenceCoverage: qualification.evidenceCoverage, profileVersion: qualification.profileVersion },
+        metadata: { status, score: qualification.score, ...(foundEmail ? { contactEmailFoundOn: "website" } : {}), evidenceCoverage: qualification.evidenceCoverage, profileVersion: qualification.profileVersion },
     });
     return { status, stale: false, cached: false };
 }

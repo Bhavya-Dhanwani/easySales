@@ -6,7 +6,6 @@ import { FIELD_OWNERSHIP, syncErrors, syncStatus } from "../../../shared/integra
 import { startWorkflow } from "../../../shared/workflows/workflow.service.js";
 import { alert } from "../../../shared/alerts/alert.service.js";
 import express, { Request, Response } from "express";
-import dns from "node:dns/promises";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import EmailIntegration from "../../../shared/models/emailIntegration.model.js";
@@ -14,7 +13,8 @@ import { authorize, ctxOf } from "../../../shared/tenancy/orgContext.middleware.
 import validate from "../../../shared/middlewares/validate.middleware.js";
 import { audit } from "../../../shared/audit/audit.service.js";
 import { encryptSecret, decryptSecret } from "../../../shared/utils/crypto.util.js";
-import { isPrivateAddress } from "../../../shared/utils/safeFetch.util.js";
+import { assertPublicHost } from "../../../shared/utils/safeFetch.util.js";
+import { imapHostFor, verifyImap } from "../../../shared/conversations/imap.service.js";
 import { createTransport } from "../../../providers/email.provider.js";
 import env from "../../../shared/config/env.config.js";
 import Ok from "../../../shared/responses/Ok.response.js";
@@ -34,18 +34,15 @@ const ConnectSchema = z.object({
     secure: z.boolean().default(false),
     user: z.string().trim().min(1).max(200),
     password: z.string().min(1).max(500),
+    // read replies from the inbox over IMAP with the same login (default host derived from the SMTP host)
+    readInbox: z.boolean().default(true),
+    imapHost: z.union([z.literal(""), z.string().trim().min(3).max(253).regex(/^[a-z0-9.-]+$/i, "Invalid host")]).optional(),
+    imapPort: z.coerce.number().int().refine((p) => p === 993 || p === 143, "IMAP port must be 993 or 143").default(993),
 }).strict();
-
-// tenants choose the SMTP host, so the server must never be pointed at internal addresses
-async function assertPublicHost(host: string) {
-    const addrs = await dns.lookup(host, { all: true }).catch(() => []);
-    if (!addrs.length) throw new BadRequest("SMTP host could not be resolved");
-    if (addrs.some((a) => isPrivateAddress(a.address))) throw new BadRequest("SMTP host must be a public address");
-}
 
 // verifies credentials by logging in (no message is sent); replaceable in tests
 export let verifySmtp = async (smtp: { host: string; port: number; secure: boolean; user: string }, password: string) => {
-    await assertPublicHost(smtp.host);
+    await assertPublicHost(smtp.host, "SMTP");
     await createTransport(smtp, password).verify();
 };
 export const setSmtpVerifier = (fn: typeof verifySmtp) => { verifySmtp = fn; };
@@ -56,6 +53,7 @@ const webhookUrl = (id: unknown) => `${env.FRONTEND_URL.replace(/\/$/, "")}/api/
 const view = (i: InstanceType<typeof EmailIntegration> | null) => i && {
     _id: i._id, provider: i.provider, status: i.status, fromName: i.fromName, fromEmail: i.fromEmail, replyTo: i.replyTo,
     smtp: { host: i.smtp?.host, port: i.smtp?.port, secure: i.smtp?.secure, user: i.smtp?.user },
+    imap: { enabled: Boolean(i.imap?.enabled), host: i.imap?.host, port: i.imap?.port, lastPolledAt: i.imap?.lastPolledAt, lastError: i.imap?.lastError },
     lastVerifiedAt: i.lastVerifiedAt, lastError: i.lastError, webhookUrl: webhookUrl(i._id), updatedAt: i.updatedAt,
 };
 
@@ -121,17 +119,26 @@ router.post("/email/connect", authorize("org.manage"), validate(ConnectSchema), 
         await audit({ organizationId: ctx.organizationId, actorType: "user", actorId: ctx.userId, action: "integration.email.connect", outcome: "failure", metadata: { host: b.host, error: (error as Error).message } });
         throw new BadRequest(`Could not sign in to ${b.host}: ${(error as Error).message}`);
     }
+    let imap: Record<string, unknown> = { enabled: false };
+    if (b.readInbox) {
+        const cfg = { host: b.imapHost || imapHostFor(b.host), port: b.imapPort, user: b.user };
+        try {
+            imap = { enabled: true, host: cfg.host, port: cfg.port, ...(await verifyImap(cfg, b.password)) };
+        } catch (error) {
+            throw new BadRequest(`Sending works, but reading the inbox at ${cfg.host} failed: ${(error as Error).message}. Check the IMAP host, enable IMAP for the mailbox, or untick "Read replies from inbox".`);
+        }
+    }
     const webhookSecret = randomBytes(24).toString("base64url");
     const integration = await EmailIntegration.findOneAndUpdate(
         { organizationId: ctx.organizationId },
         {
             organizationId: ctx.organizationId, provider: "smtp", status: "connected", fromName: b.fromName, fromEmail: b.fromEmail, replyTo: b.replyTo || undefined,
-            smtp: { ...smtp, passwordEnc: encryptSecret(b.password) }, webhookSecretEnc: encryptSecret(webhookSecret),
+            smtp: { ...smtp, passwordEnc: encryptSecret(b.password) }, imap, webhookSecretEnc: encryptSecret(webhookSecret),
             lastVerifiedAt: new Date(), lastError: null, connectedBy: ctx.userId,
         },
         { upsert: true, new: true, runValidators: true },
     );
-    await audit({ organizationId: ctx.organizationId, actorType: "user", actorId: ctx.userId, action: "integration.email.connect", targetType: "integration", targetId: String(integration._id), outcome: "success", metadata: { host: b.host, fromEmail: b.fromEmail } });
+    await audit({ organizationId: ctx.organizationId, actorType: "user", actorId: ctx.userId, action: "integration.email.connect", targetType: "integration", targetId: String(integration._id), outcome: "success", metadata: { host: b.host, fromEmail: b.fromEmail, readInbox: Boolean(imap.enabled) } });
     return Ok(res, "Email account connected", { integration: view(integration), webhookSecret });
 });
 

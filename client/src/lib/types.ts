@@ -114,6 +114,7 @@ export interface EmailIntegration {
   fromEmail: string
   replyTo?: string
   smtp: { host: string; port: number; secure: boolean; user: string }
+  imap?: { enabled: boolean; host?: string; port?: number; lastPolledAt?: string; lastError?: string }
   lastVerifiedAt?: string
   lastError?: string
   webhookUrl: string

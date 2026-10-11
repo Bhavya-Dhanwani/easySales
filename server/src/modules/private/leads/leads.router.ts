@@ -21,6 +21,7 @@ import { activeWorkflowFor, startWorkflow } from "../../../shared/workflows/work
 import { getCurrentPolicy, normalizeEmail } from "../../../shared/policy/policy.service.js";
 import { requalify } from "../../../shared/research/research.service.js";
 import { createProposal } from "../../../shared/proposals/proposal.service.js";
+import { DISCOVERY_SOURCES, discoverLeads, discoverySources } from "../../../shared/discovery/discovery.service.js";
 import { escapeRegex, nextCursor, oid, pageParams, str } from "../../../shared/utils/request.util.js";
 import Ok from "../../../shared/responses/Ok.response.js";
 import Created from "../../../shared/responses/Created.response.js";
@@ -64,7 +65,7 @@ export function normalizeWebsite(raw?: string) {
     }
 }
 
-function toLeadDoc(input: LeadInput, provider: "csv" | "manual") {
+function toLeadDoc(input: LeadInput, provider: "csv" | "manual" | "discovery") {
     const { website, domain } = normalizeWebsite(input.website);
     const doc = {
         company: { name: input.companyName, website, domain, industry: input.industry, size: input.size, employeeCount: input.employeeCount, country: input.country, description: input.description },
@@ -127,6 +128,27 @@ router.post("/", authorize("leads.write"), validate(LeadInputSchema), async (req
 });
 
 /*
+    @route GET /api/v1/leads/discover/sources
+    @desc Lead sources and whether each is enabled (free OpenStreetMap; others need an API key)
+*/
+router.get("/discover/sources", authorize("leads.read"), async (_req: Request, res: Response) => Ok(res, "Lead sources", { sources: discoverySources() }));
+
+/*
+    @route POST /api/v1/leads/discover
+    @desc Search several sources at once ("dentist" in "Pune, India"), merged and deduplicated, with leads
+          already in the pipeline marked. Nothing is saved: chosen candidates go through /import (source "discovery").
+*/
+router.post("/discover", authorize("leads.write"), validate(z.object({
+    what: z.string().trim().min(2).max(100),
+    where: z.string().trim().min(2).max(100),
+    sources: z.array(z.enum(DISCOVERY_SOURCES)).max(DISCOVERY_SOURCES.length).optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+}).strict()), async (req: Request, res: Response) => {
+    const ctx = ctxOf(req);
+    return Ok(res, "Lead search finished", await discoverLeads(ctx.organizationId, ctx.userId, req.body));
+});
+
+/*
     @route POST /api/v1/leads/import
     @desc Import mapped CSV rows as a tracked ImportJob. Safe to retry (Idempotency-Key) and safe under
           concurrent uploads (unique dedupe key per tenant). Row-level errors are kept for the error report.
@@ -134,6 +156,9 @@ router.post("/", authorize("leads.write"), validate(LeadInputSchema), async (req
 router.post("/import", authorize("leads.write"), validate(z.object({
     fileName: z.string().trim().max(200).optional(),
     rows: z.array(z.unknown()).min(1).max(2000),
+    source: z.enum(["csv", "discovery"]).default("csv"),
+    // queue research for the new leads right away (discovered leads need it to find a contact email)
+    research: z.boolean().default(false),
 })), async (req: Request, res: Response) => {
     const ctx = ctxOf(req);
     const idempotencyKey = str(req.header("idempotency-key"))?.slice(0, 100) ?? new mongoose.Types.ObjectId().toString();
@@ -154,7 +179,7 @@ router.post("/import", authorize("leads.write"), validate(z.object({
             rowErrors.push({ row: i + 1, kind: "invalid", message: `${issue.path.join(".")}: ${issue.message}`, company: String(r.companyName ?? "").slice(0, 200), email: String(r.contactEmail ?? "").slice(0, 200) });
             return;
         }
-        const doc = toLeadDoc(parsed.data, "csv");
+        const doc = toLeadDoc(parsed.data, req.body.source);
         if (seen.has(doc.dedupeKey)) {
             rowErrors.push({ row: i + 1, kind: "duplicate", message: "Duplicate within file", company: doc.company.name, email: doc.contact.email });
             return;
@@ -172,6 +197,7 @@ router.post("/import", authorize("leads.write"), validate(z.object({
 
     // the unique index is the final arbiter under concurrency: a lost race is a duplicate, not an error
     let created = 0;
+    let createdIds: mongoose.Types.ObjectId[] = [];
     if (fresh.length) {
         try {
             const result = await Lead.insertMany(
@@ -179,10 +205,12 @@ router.post("/import", authorize("leads.write"), validate(z.object({
                 { ordered: false },
             );
             created = result.length;
+            createdIds = result.map((l) => l._id);
         } catch (error) {
             const e = error as { code?: number; insertedDocs?: unknown[]; writeErrors?: { index?: number; err?: { index?: number } }[] };
             if (!e.writeErrors && e.code !== 11000) throw error;
             created = e.insertedDocs?.length ?? 0;
+            createdIds = ((e.insertedDocs ?? []) as { _id: mongoose.Types.ObjectId }[]).map((l) => l._id);
             for (const w of e.writeErrors ?? []) {
                 const d = fresh[w.index ?? w.err?.index ?? -1];
                 if (d) rowErrors.push({ row: d.row, kind: "duplicate", message: "Already in your leads", company: d.company.name, email: d.contact.email });
@@ -191,6 +219,15 @@ router.post("/import", authorize("leads.write"), validate(z.object({
     }
 
     if (created) await recordDiscoveredImport(ctx.organizationId, job._id);
+    if (req.body.research) {
+        for (const leadId of createdIds) {
+            await startWorkflow({
+                organizationId: ctx.organizationId, type: "lead.research", entityType: "lead", entityId: leadId,
+                idempotencyKey: `research:${leadId}:import`, startedBy: ctx.userId, actor: { type: "user", id: ctx.userId },
+            });
+        }
+        if (createdIds.length) await Lead.updateMany({ organizationId: ctx.organizationId, _id: { $in: createdIds } }, { status: "research_queued" });
+    }
     rowErrors.sort((a, b) => a.row - b.row);
     const invalidRows = rowErrors.filter((e) => e.kind === "invalid").length;
     const duplicateRows = rowErrors.length - invalidRows;

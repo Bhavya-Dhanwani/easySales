@@ -19,7 +19,9 @@ Base URL `/api`. Authenticated routes live under `/api/v1` and need `Authorizati
 |---|---|---|
 | GET | `/v1/leads` | filters: `status`, `stage`, `industry`, `country`, `minScore`, `maxScore`, `assignedTo`, `createdAfter`, `createdBefore`, `q`, `cursor`, `limit` |
 | POST | `/v1/leads` | manual create; 409 on duplicate |
-| POST | `/v1/leads/import` | `{ fileName?, rows: [...] }` (≤ 2000 mapped rows), `Idempotency-Key` header → `ImportJob` |
+| POST | `/v1/leads/import` | `{ fileName?, rows: [...], source?: "csv" \| "discovery", research?: boolean }` (≤ 2000 mapped rows), `Idempotency-Key` header → `ImportJob`. `research: true` queues research for the new leads |
+| GET | `/v1/leads/discover/sources` | lead sources (`openstreetmap`, `google_places`, `apollo`, `web_search`) with `enabled` and `paid` |
+| POST | `/v1/leads/discover` | `{ what, where, sources?, limit? }` → merged `candidates` (`alreadyLead` marked), per-source report, `costMinor`. Nothing is saved; daily cap `DISCOVERY_SEARCHES_PER_DAY` (429) |
 | GET | `/v1/imports`, `/v1/imports/:id` | progress and counts |
 | GET | `/v1/imports/:id/errors.csv` | row-level error report (formula-safe) |
 | GET / PATCH / DELETE | `/v1/leads/:id` | PATCH: `opportunityStage`, `contact`, `consent`, `status` (human override) |
@@ -38,7 +40,7 @@ Scoring: `score = Σ weight × {match 1, partial .5, mismatch 0, unknown 0} / Σ
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/v1/integrations/email` | connection status (credentials are never returned) |
-| POST | `/v1/integrations/email/connect` | `{ fromName, fromEmail, replyTo?, host, port (25/465/587/2525), secure, user, password }`: logs in to verify, stores the password AES-256-GCM encrypted, returns the webhook secret **once** |
+| POST | `/v1/integrations/email/connect` | `{ fromName, fromEmail, replyTo?, host, port (25/465/587/2525), secure, user, password, readInbox? (default true), imapHost?, imapPort? (993/143) }`: logs in to verify (SMTP, and IMAP when reading the inbox), stores the password AES-256-GCM encrypted, returns the webhook secret **once**. Inbox reading starts from the current newest message |
 | POST | `/v1/integrations/email/test`, `/rotate-secret` | health check / new webhook secret |
 | DELETE | `/v1/integrations/email` | disconnect (credentials deleted) |
 | GET / POST | `/v1/campaigns` | `{ name, objective, audience: { statuses, minScore, industries, countries }, followUpDelaysDays: [3,4], dailyLimit, autoSend }` |

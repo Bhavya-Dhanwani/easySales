@@ -43,29 +43,50 @@ export interface ResearchInput {
 }
 
 const PAGE_HINT = /about|service|solution|product|team|company|pricing|who-we|what-we/i;
+const CONTACT_HINT = /contact|reach-us|get-in-touch/i;
+
+const EMAIL = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,24}/gi;
+const NOT_AN_EMAIL = /\.(png|jpe?g|gif|svg|webp)$|@(example|sentry|wixpress|domain|email)\./i;
+
+/*
+    A public business address published on the prospect's own site: mailto links first,
+    then addresses on the site's own domain. Never guessed, never from another site.
+*/
+export function contactEmailFrom(html: string[], siteDomain: string) {
+    const mailto = html.flatMap((h) => [...h.matchAll(/mailto:([^"'?\s>]+)/gi)].map((m) => decodeURIComponent(m[1])));
+    const text = html.flatMap((h) => h.match(EMAIL) ?? []);
+    const domain = siteDomain.replace(/^www\./, "").toLowerCase();
+    const valid = [...mailto, ...text].map((e) => e.trim().toLowerCase()).filter((e) => /^[^@\s]+@[^@\s]+\.[a-z]{2,24}$/.test(e) && !NOT_AN_EMAIL.test(e));
+    const own = (e: string) => e.endsWith(`@${domain}`) || e.endsWith(`.${domain}`);
+    return valid.find(own) ?? mailto.map((e) => e.trim().toLowerCase()).find((e) => valid.includes(e));
+}
 
 // homepage plus up to two same-site pages that usually describe the business
 async function readSite(website: string) {
     const pages: { url: string; text: string }[] = [];
+    const html: string[] = [];
     const errors: string[] = [];
     const home = await safeFetch(website);
+    html.push(home.body);
     const homeText = htmlToText(home.body, 6000);
     pages.push({ url: home.url, text: `Title: ${homeText.title}\nDescription: ${homeText.description}\n${homeText.text}` });
 
     const base = new URL(home.url);
-    const links = [...home.body.matchAll(/href=["']([^"'#]+)["']/gi)]
+    const sameSite = [...home.body.matchAll(/href=["']([^"'#]+)["']/gi)]
         .map((m) => { try { return new URL(m[1], base); } catch { return null; } })
-        .filter((u): u is URL => Boolean(u && u.hostname === base.hostname && PAGE_HINT.test(u.pathname) && u.pathname !== base.pathname))
-        .map((u) => `${u.origin}${u.pathname}`);
-    for (const url of [...new Set(links)].slice(0, 2)) {
+        .filter((u): u is URL => Boolean(u && u.hostname === base.hostname && u.pathname !== base.pathname));
+    const pick = (hint: RegExp, n: number) => [...new Set(sameSite.filter((u) => hint.test(u.pathname)).map((u) => `${u.origin}${u.pathname}`))].slice(0, n);
+    // two pages about the business, plus the contact page (where the public email usually is)
+    for (const url of [...new Set([...pick(PAGE_HINT, 2), ...pick(CONTACT_HINT, 1)])]) {
         try {
             const page = await safeFetch(url);
+            html.push(page.body);
             pages.push({ url: page.url, text: htmlToText(page.body, 3000).text });
         } catch (error) {
             errors.push(`${url}: ${(error as Error).message}`);
         }
     }
-    return { pages, errors };
+    return { pages, errors, contactEmail: contactEmailFrom(html, base.hostname) };
 }
 
 /*
@@ -77,10 +98,12 @@ export async function researchLead(ctx: AgentRunContext, input: ResearchInput, p
 
     let pages: { url: string; text: string }[] = [];
     let fetchError: string | null = null;
+    let contactEmail: string | undefined;
     if (input.company.website) {
         try {
             const site = await readSite(input.company.website);
             pages = site.pages;
+            contactEmail = site.contactEmail;
             if (site.errors.length) fetchError = site.errors.join("; ");
         } catch (error) {
             fetchError = (error as Error).message;
@@ -124,6 +147,7 @@ ${pages.length ? pages.map((p) => untrusted(p.url, p.text)).join("\n\n") : `No w
         employeeCount: data.employeeCountEstimate,
         sources: pages.map((p) => p.url),
         fetchError,
+        contactEmail,
         conflicts: data.conflicts,
         evidence: data.findings.map((f) => ({
             claim: f.claim,

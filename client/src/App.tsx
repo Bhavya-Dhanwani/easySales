@@ -11,6 +11,7 @@ const Onboarding = lazy(() => import('./app/Onboarding'))
 const Leads = lazy(() => import('./app/Leads'))
 const LeadDetail = lazy(() => import('./app/LeadDetail'))
 const ImportWizard = lazy(() => import('./app/ImportWizard'))
+const FindLeads = lazy(() => import('./app/FindLeads'))
 const Research = lazy(() => import('./app/Research'))
 const Email = lazy(() => import('./app/Email'))
 const Campaigns = lazy(() => import('./app/Campaigns'))
@@ -61,6 +62,7 @@ export default function App() {
           <Route path="onboarding" element={<Onboarding />} />
           <Route path="leads" element={<Leads />} />
           <Route path="leads/import" element={<ImportWizard />} />
+          <Route path="leads/find" element={<FindLeads />} />
           <Route path="leads/:id" element={<LeadDetail />} />
           <Route path="research" element={<Research />} />
           <Route path="inbox" element={<Inbox />} />

@@ -40,8 +40,8 @@ export const setIntegrationHttp = (next: Http | null) => { http = next ?? ((url,
     401 → ReconnectRequiredError is decided by the caller (it may refresh first), other
     non-2xx → ProviderError with a short, credential-free message.
 */
-export async function request<T>(url: string, init: { method?: string; token?: string; body?: unknown; form?: Record<string, string> } = {}): Promise<{ status: number; data: T }> {
-    const headers: Record<string, string> = { Accept: "application/json" };
+export async function request<T>(url: string, init: { method?: string; token?: string; headers?: Record<string, string>; body?: unknown; form?: Record<string, string> } = {}): Promise<{ status: number; data: T }> {
+    const headers: Record<string, string> = { Accept: "application/json", ...init.headers };
     if (init.token) headers.Authorization = `Bearer ${init.token}`;
     let body: string | undefined;
     if (init.form) {

@@ -28,6 +28,7 @@ import { runRequirementsExtraction } from "../shared/requirements/requirements.s
 import { proposeOutbound } from "../shared/outbound/outbound.service.js";
 import { getEmailProvider, type EmailProvider } from "../providers/email.provider.js";
 import { followUpStopReason, recordOutboundSent } from "../shared/conversations/followups.service.js";
+import { pollInboxes } from "../shared/conversations/imap.service.js";
 import { processPendingEvents } from "../shared/conversations/events.service.js";
 import { enrollCampaigns } from "../shared/campaigns/campaign.service.js";
 import ProviderEvent from "../shared/models/providerEvent.model.js";
@@ -417,6 +418,7 @@ export async function runOnce({ maxWorkflows = 5, maxMessages = 20, force = fals
         await task("ops_checks", () => runOpsChecks());
         await task("integration_health", () => healthCheckIntegrations());
         await task("calendar_reconcile", () => reconcileMeetings());
+        await task("inbox_poll", () => pollInboxes());
         await task("inactivity_scan", () => scanInactivity());
     }
     if (Date.now() - lastRetentionRun > 24 * 3600_000) {

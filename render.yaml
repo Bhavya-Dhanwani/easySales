@@ -22,6 +22,9 @@ envVarGroups:
       - { key: GOOGLE_CLIENT_SECRET, sync: false }
       - { key: ALERT_WEBHOOK_URL, sync: false }
       - { key: NEATLOGS_API_KEY, sync: false }
+      - { key: GOOGLE_PLACES_API_KEY, sync: false }
+      - { key: APOLLO_API_KEY, sync: false }
+      - { key: BRAVE_SEARCH_API_KEY, sync: false }
   - name: easysales-production
     envVars:
       - { key: NODE_ENV, value: production }
@@ -42,6 +45,9 @@ envVarGroups:
       - { key: GOOGLE_CLIENT_SECRET, sync: false }
       - { key: ALERT_WEBHOOK_URL, sync: false }
       - { key: NEATLOGS_API_KEY, sync: false }
+      - { key: GOOGLE_PLACES_API_KEY, sync: false }
+      - { key: APOLLO_API_KEY, sync: false }
+      - { key: BRAVE_SEARCH_API_KEY, sync: false }
 
 services:
   - type: web

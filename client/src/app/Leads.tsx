@@ -112,6 +112,7 @@ export default function Leads() {
       <PageHead index="Lead pipeline" title={<>Every prospect, <span className="hl">one place.</span></>}>
         <Link className="btn ghost" to="/app/research">Research activity</Link>
         <Link className="btn ghost" to="/app/leads/import">Import CSV</Link>
+        <Link className="btn lime" to="/app/leads/find">Find leads</Link>
         <button className="btn" onClick={() => update('add', adding ? null : '1')}>{adding ? 'Close' : 'Add lead'}</button>
       </PageHead>
 
@@ -137,8 +138,8 @@ export default function Leads() {
       </div>
 
       {loading ? <Spinner label="Loading leads" /> : !leads.length ? (
-        <Empty title={query ? 'No matches.' : 'No leads yet.'} action={!query && <Link className="btn lime" to="/app/leads/import">Import your first CSV</Link>}>
-          {query ? 'Try another filter.' : 'Import a CSV or add a lead by hand. Research and scoring take it from there.'}
+        <Empty title={query ? 'No matches.' : 'No leads yet.'} action={!query && <Link className="btn lime" to="/app/leads/find">Find leads</Link>}>
+          {query ? 'Try another filter.' : 'Find businesses by type and place, import a CSV or add a lead by hand. Research and scoring take it from there.'}
         </Empty>
       ) : (
         <div className="table-wrap">

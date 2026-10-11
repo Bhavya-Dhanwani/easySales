@@ -2,7 +2,7 @@
 import mongoose from "mongoose";
 import tenantPlugin, { tenantFields } from "../tenancy/tenant.plugin.js";
 
-export const USAGE_KINDS = ["llm", "research", "email", "prototype"] as const;
+export const USAGE_KINDS = ["llm", "research", "email", "prototype", "discovery"] as const;
 
 // the usage ledger: one immutable row per metered unit of work (AI call, research job, email, build attempt)
 const usageRecordSchema = new mongoose.Schema({

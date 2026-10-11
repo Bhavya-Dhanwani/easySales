@@ -1,4 +1,5 @@
 import "./testEnv.js";
+import { setImapClient } from "../shared/conversations/imap.service.js";
 import Organization from "../shared/models/organization.model.js";
 import mongoose from "mongoose";
 import request from "supertest";
@@ -48,6 +49,20 @@ export function fakeMailbox() {
     setEmailProvider({ name: "fake", async send(email) { sent.push(email); return { providerMessageId: `fake-${sent.length}` }; } });
     return sent;
 }
+
+// an in-memory IMAP inbox (every test file starts with an empty one, so connecting never touches the network)
+export function fakeInbox(state: { uidValidity: number; messages: { uid: number; from: string; inReplyTo?: string; raw: string }[] } = { uidValidity: 1, messages: [] }) {
+    const downloaded: number[] = [];
+    setImapClient(async () => ({
+        async connect() {}, async logout() {},
+        async mailboxOpen() { return { uidValidity: state.uidValidity, uidNext: Math.max(0, ...state.messages.map((m) => m.uid)) + 1 }; },
+        async search(q: { uid: string }) { const from = Number(q.uid.split(":")[0]); const all = state.messages.map((m) => m.uid); return all.filter((u) => u >= from).concat(all.length ? [Math.max(...all)] : []); },
+        async fetchAll(uids: number[]) { return state.messages.filter((m) => uids.includes(m.uid)).map((m) => ({ uid: m.uid, size: m.raw.length, envelope: { from: [{ address: m.from }], inReplyTo: m.inReplyTo } })); },
+        async fetchOne(uid: string) { downloaded.push(Number(uid)); const m = state.messages.find((x) => x.uid === Number(uid)); return m ? { source: Buffer.from(m.raw) } : false; },
+    }));
+    return { state, downloaded };
+}
+fakeInbox();
 
 let seq = 0;
 

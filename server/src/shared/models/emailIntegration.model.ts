@@ -24,6 +24,18 @@ const emailIntegrationSchema = new mongoose.Schema({
         passwordEnc: { type: String, required: true },
     },
 
+    // inbox reading: replies are picked up over IMAP with the same login (no inbound webhook needed)
+    imap: {
+        enabled: { type: Boolean, default: false },
+        host: String,
+        port: Number,
+        // the inbox position already read; a new uidValidity means the mailbox was rebuilt (start from now)
+        uidValidity: String,
+        lastUid: { type: Number, default: 0 },
+        lastPolledAt: Date,
+        lastError: String,
+    },
+
     // HMAC secret for this account's inbound/event webhook (encrypted)
     webhookSecretEnc: { type: String, required: true },
 

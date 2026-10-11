@@ -15,7 +15,7 @@ type Evt = InstanceType<typeof ProviderEvent>;
 type Payload = { messageId?: string; from?: string; subject?: string; text?: string; inReplyTo?: string; references?: string[]; autoSubmitted?: boolean; providerMessageId?: string; bounceType?: "hard" | "soft" };
 
 // finds the thread an inbound email belongs to: our Message-ID in its headers first, then the sender address
-async function matchConversation(organizationId: mongoose.Types.ObjectId, p: Payload) {
+export async function matchConversation(organizationId: mongoose.Types.ObjectId, p: Payload) {
     const ids = [p.inReplyTo, ...(p.references ?? [])].filter((v): v is string => Boolean(v));
     if (ids.length) {
         const replied = await Message.findOne({ organizationId, providerMessageId: { $in: ids } }, { conversationId: 1 }).lean();

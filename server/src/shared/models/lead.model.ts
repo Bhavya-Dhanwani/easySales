@@ -66,7 +66,7 @@ const leadSchema = new mongoose.Schema({
     },
 
     source: {
-        provider: { type: String, enum: ["csv", "manual", "provider", "seed"], default: "manual" },
+        provider: { type: String, enum: ["csv", "manual", "provider", "seed", "discovery"], default: "manual" },
         externalId: String,
         importId: { type: mongoose.Schema.Types.ObjectId, ref: "ImportJob" },
         enrolledAt: Date,

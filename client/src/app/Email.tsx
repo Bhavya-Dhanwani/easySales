@@ -19,7 +19,7 @@ function SecretOnce({ secret, url }: { secret: string; url: string }) {
   return (
     <div className="card stack" style={{ borderColor: 'var(--lime-2)', background: 'rgba(200,241,105,.12)' }}>
       <div className="h3">Save this webhook secret now — it is shown only once</div>
-      <p className="small muted" style={{ margin: 0 }}>Point your mail provider's inbound / event webhook at the URL below and sign each request body with HMAC-SHA256 using this secret (header <span className="mono">X-EasySales-Signature</span>).</p>
+      <p className="small muted" style={{ margin: 0 }}>Optional when replies are read from the inbox; needed for delivery and bounce events. Point your mail provider's inbound / event webhook at the URL below and sign each request body with HMAC-SHA256 using this secret (header <span className="mono">X-EasySales-Signature</span>).</p>
       <div className="row-flex"><code className="mono" style={{ flex: 1, overflowWrap: 'anywhere' }}>{url}</code><button className="btn sm ghost" onClick={() => copy(url)}>Copy URL</button></div>
       <div className="row-flex"><code className="mono" style={{ flex: 1, overflowWrap: 'anywhere' }}>{secret}</code><button className="btn sm" onClick={() => copy(secret)}>Copy secret</button></div>
     </div>
@@ -30,7 +30,7 @@ export default function Email() {
   const { org } = useAuth()
   const toast = useToast()
   const { data, error, reload } = useLoad(() => api<{ integration: EmailIntegration | null }>('/v1/integrations/email'), [org?.id])
-  const [form, setForm] = useState({ fromName: '', fromEmail: '', replyTo: '', host: '', port: 587, secure: false, user: '', password: '' })
+  const [form, setForm] = useState({ fromName: '', fromEmail: '', replyTo: '', host: '', port: 587, secure: false, user: '', password: '', readInbox: true, imapHost: '' })
   const [busy, setBusy] = useState(false)
   const [secret, setSecret] = useState<string | null>(null)
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [k]: e.target.type === 'checkbox' ? e.target.checked : k === 'port' ? Number(e.target.value) : e.target.value })
@@ -43,7 +43,7 @@ export default function Email() {
   async function connect(e: FormEvent) {
     e.preventDefault()
     await run(async () => {
-      const r = await api<{ webhookSecret: string }>('/v1/integrations/email/connect', { body: { ...form, replyTo: form.replyTo || undefined } })
+      const r = await api<{ webhookSecret: string }>('/v1/integrations/email/connect', { body: { ...form, replyTo: form.replyTo || undefined, imapHost: form.imapHost || undefined } })
       setSecret(r.webhookSecret)
       setForm({ ...form, password: '' })
     }, 'Email account connected')
@@ -68,8 +68,10 @@ export default function Email() {
             <Badge status={i.status === 'connected' ? 'ok' : 'failed'}>{i.status}</Badge>
           </div>
           {i.lastError && <div className="form-error small">{i.lastError}</div>}
+          {i.imap?.lastError && <div className="form-error small">Reading the inbox failed: {i.imap.lastError}</div>}
           <dl className="kv">
             <dt>Last verified</dt><dd>{ago(i.lastVerifiedAt)}</dd>
+            <dt>Replies</dt><dd>{i.imap?.enabled ? <>read from the inbox at {i.imap.host} · checked {i.imap.lastPolledAt ? ago(i.imap.lastPolledAt) : 'soon'}</> : 'only through the webhook below'}</dd>
             <dt>Webhook URL</dt><dd className="mono">{i.webhookUrl}</dd>
           </dl>
           <div className="row-flex">
@@ -101,6 +103,13 @@ export default function Email() {
           <label className="field"><span>Username</span><input className="input" required autoComplete="off" value={form.user} onChange={set('user')} /></label>
           <label className="field"><span>Password / app password</span><input className="input" type="password" required autoComplete="new-password" value={form.password} onChange={set('password')} /><small>Gmail and Outlook need an app password.</small></label>
         </div>
+        <label className="check"><input type="checkbox" checked={form.readInbox} onChange={set('readInbox')} /> Read replies from this inbox (IMAP, same login)</label>
+        {form.readInbox && (
+          <div className="grid-3">
+            <label className="field"><span>IMAP host (optional)</span><input className="input" value={form.imapHost} onChange={set('imapHost')} placeholder={form.host ? form.host.replace(/^(smtp|mail)\./, 'imap.') : 'imap.gmail.com'} /><small>Left empty, it is worked out from the SMTP host.</small></label>
+            <p className="small muted" style={{ gridColumn: 'span 2', margin: 0, alignSelf: 'center' }}>Checked every minute, read-only. Only replies from your leads are opened and stored; other mail is never downloaded. Turn IMAP on in Gmail or Outlook settings first.</p>
+          </div>
+        )}
         <div><button className="btn lime" disabled={busy}>{busy ? 'Verifying…' : 'Verify & connect'}</button></div>
       </form>
     </div>

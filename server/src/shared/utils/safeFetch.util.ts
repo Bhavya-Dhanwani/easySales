@@ -3,6 +3,7 @@ import dns from "node:dns";
 import http from "node:http";
 import https from "node:https";
 import net from "node:net";
+import BadRequest from "../errors/BadRequest.error.js";
 
 const MAX_BYTES = 1_000_000;
 const TIMEOUT_MS = 8_000;
@@ -137,4 +138,11 @@ export function htmlToText(html: string, maxChars = 12_000) {
         .replace(/\n\s*\n+/g, "\n")
         .trim();
     return { title, description, text: text.slice(0, maxChars) };
+}
+
+// tenants choose their mail hosts, so the server must never be pointed at internal addresses
+export async function assertPublicHost(host: string, label: string) {
+    const addrs = await dns.promises.lookup(host, { all: true }).catch(() => []);
+    if (!addrs.length) throw new BadRequest(`${label} host could not be resolved`);
+    if (addrs.some((a) => isPrivateAddress(a.address))) throw new BadRequest(`${label} host must be a public address`);
 }
