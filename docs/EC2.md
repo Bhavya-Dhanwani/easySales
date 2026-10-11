@@ -63,6 +63,14 @@ sudo nano /opt/easysales/server/.env
 sudo bash /opt/easysales/deploy/ec2/setup.sh
 ```
 
+**Deploying without keys first is fine.** The site runs; AI steps wait for `LLM_API_KEY`. Without SMTP, account emails such as your sign-up verification are written to the server log instead of being sent. Read your code with:
+
+```bash
+sudo docker compose -f /opt/easysales/deploy/ec2/docker-compose.yml logs api | grep 'Mail Mock'
+```
+
+Add the keys whenever you're ready and run `sudo bash /opt/easysales/deploy/ec2/setup.sh` to redeploy.
+
 **Without User data (manual install):** connect as above and run `sudo dnf install -y git && sudo git clone https://github.com/Bhavya-Dhanwani/easySales.git /opt/easysales && sudo bash /opt/easysales/deploy/ec2/setup.sh`. It stops once so you can fill in `server/.env`; then run the last command again.
 
 ## 3. Set up the agent (in the app, once)

@@ -98,6 +98,10 @@ for _ in $(seq 1 60); do
         if ! grep -qE '^LLM_API_KEY=.+' "$APP_ENV" || ! grep -qE '^SMTP_PASS=.+' "$APP_ENV"; then
             echo "Next: add LLM_API_KEY and the SMTP_* settings to $APP_ENV, then run: sudo bash $ROOT/deploy/ec2/setup.sh"
         fi
+        if ! grep -qE '^SEND_MAIL=true' "$APP_ENV"; then
+            echo "Email is off: sign-up codes are written to the log. Read yours with:"
+            echo "  sudo docker compose -f $ROOT/deploy/ec2/docker-compose.yml logs api | grep 'Mail Mock'"
+        fi
         exit 0
     fi
     sleep 5
