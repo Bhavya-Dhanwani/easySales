@@ -1,0 +1,11 @@
+{
+  "name": "easysales-ec2-deploy",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "node deploy.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-ec2": "^3.1149.0"
+  }
+}

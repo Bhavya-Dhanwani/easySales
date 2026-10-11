@@ -35,3 +35,6 @@ deploy/ec2/backups/
 deploy/cdk/app.env
 deploy/cdk/cdk.out/
 deploy/cdk/cdk-outputs.json
+deploy/ec2/app.env
+deploy/ec2/.ssh/
+deploy/ec2/node_modules/
