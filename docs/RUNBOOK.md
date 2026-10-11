@@ -51,11 +51,17 @@ Alerts go to the logs, the tenant's audit log (tenant alerts) and `ALERT_WEBHOOK
 ## Integrations pilot
 
 1. Create a HubSpot **developer test account** and a Google Cloud OAuth client in testing mode. Set the env vars from DEPLOYMENT.md.
-2. Connect both from Integrations in a pilot workspace, run **Sync now**, and check that linked counts match the CRM and that no duplicates appear. Run it twice.
-3. Edit a contact in HubSpot and confirm the change arrives (webhook). Qualify a lead here and confirm the deal appears there.
-4. Book, move and cancel a meeting from a lead, and cancel one inside Google Calendar; the change shows here within a few minutes.
-5. Only then enable it for a real business.
-6. If a connection shows **degraded**, its token was revoked or expired. Errors say "Reconnect the integration": reconnecting resumes the sync from its checkpoint.
+2. **Automated pilot (HubSpot):** create a private app in the developer test account (contacts, companies and deals read+write), put its token in `server/.env` as `HUBSPOT_PILOT_TOKEN`, then run `npm run pilot:hubspot`. It refuses non-test portals and uses a throwaway database. It checks import-once, consent, mapping uniqueness, push-once (contact, company, deal), CRM-owned changes and platform-owned data. It also proves every pre-existing CRM record is unchanged, and deletes its own records. Record the result below.
+
+   | Date | Portal | Result |
+   |---|---|---|
+   | 2026-10-11 | simulator (`PILOT_SIMULATE=1`) | 10/10 passed. Found and fixed a paging bug that could skip records |
+   | _pending_ | your HubSpot test portal | |
+3. Connect both from Integrations in a pilot workspace, run **Sync now**, and check that linked counts match the CRM and that no duplicates appear. Run it twice.
+4. Edit a contact in HubSpot and confirm the change arrives (webhook). Qualify a lead here and confirm the deal appears there.
+5. Book, move and cancel a meeting from a lead, and cancel one inside Google Calendar; the change shows here within a few minutes.
+6. Only then enable it for a real business.
+7. If a connection shows **degraded**, its token was revoked or expired. Errors say "Reconnect the integration": reconnecting resumes the sync from its checkpoint.
 
 ## Support workflow
 

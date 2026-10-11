@@ -254,3 +254,24 @@ test("calendar: real availability in the business timezone, no double booking, i
     assert.match(sys, /Asia\/Kolkata/);
     assert.equal(mailbox.length >= 0, true);
 });
+
+test("paging never skips records: the query stays fixed while paging, the checkpoint moves after", async () => {
+    const owner = await createAccount("Pager");
+    await connect(owner.auth, "hubspot");
+    sims.hs.pageSize = 1;
+    const ids = ["a", "b", "c"].map((x) => sims.put("contacts", { email: `${x}@pages.test`, firstname: x, jobtitle: "Manager" }).id);
+    await request(app).post("/api/v1/integrations/hubspot/sync").set(owner.auth);
+    await runOnce();
+    assert.equal(await Lead.countDocuments({ organizationId: owner.organizationId }).setOptions({ crossTenant: true }), 3, "every page imported in one run");
+
+    // an older record is edited and a new one appears: the next sync picks up both
+    const a = sims.hs.contacts.get(ids[0])!;
+    a.properties.jobtitle = "Director";
+    a.updatedAt = Date.now() + 50;
+    sims.put("contacts", { email: "d@pages.test", firstname: "d" });
+    await request(app).post("/api/v1/integrations/hubspot/sync").set(owner.auth);
+    await runOnce();
+    const leads = await Lead.find({ organizationId: owner.organizationId }).setOptions({ crossTenant: true }).lean();
+    assert.equal(leads.length, 4);
+    assert.equal(leads.find((l) => l.contact?.email === "a@pages.test")!.contact?.title, "Director");
+});

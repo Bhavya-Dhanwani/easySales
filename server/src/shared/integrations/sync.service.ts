@@ -133,18 +133,24 @@ export async function pullSync(organizationId: Id) {
     const counts = { created: 0, linked: 0, updated: 0, skipped: 0 };
     await withProvider(organizationId, "hubspot", async (token, conn) => {
         for (const kind of ["companies", "contacts"] as const) {
-            let since = conn.cursors?.get(kind) ?? 0;
+            // the query's "modified since" stays fixed while paging: a page cursor only means something
+            // for the query that produced it. The checkpoint (newest change applied) is saved per page,
+            // and a resumed run starts a fresh query from it (GTE, so ties are re-applied, never skipped).
+            let checkpoint = conn.cursors?.get(kind) ?? 0;
+            let since = checkpoint;
             let after: string | undefined;
-            do {
+            for (;;) {
                 const page = kind === "companies" ? await hubspot.searchCompanies(token, since, after) : await hubspot.searchContacts(token, since, after);
                 for (const item of page.items) {
                     const r = kind === "companies" ? await applyCompany(organizationId, conn, item as NormalizedCompany) : await applyContact(organizationId, conn, token, item as NormalizedContact);
                     if (kind === "contacts") counts[r as keyof typeof counts] += 1;
-                    since = Math.max(since, item.updatedAt.getTime());
+                    checkpoint = Math.max(checkpoint, item.updatedAt.getTime());
                 }
-                after = page.next;
-                await IntegrationConnection.updateOne({ organizationId, _id: conn._id }, { [`cursors.${kind}`]: since });
-            } while (after);
+                await IntegrationConnection.updateOne({ organizationId, _id: conn._id }, { [`cursors.${kind}`]: checkpoint });
+                if (!page.next) break;
+                // HubSpot search stops at 10,000 results per query: continue with a new query from the checkpoint
+                if (Number(page.next) >= 9_900) { since = checkpoint; after = undefined; } else after = page.next;
+            }
         }
         await IntegrationConnection.updateOne({ organizationId, _id: conn._id }, { lastSyncAt: new Date(), lastError: null, status: "connected" });
     });

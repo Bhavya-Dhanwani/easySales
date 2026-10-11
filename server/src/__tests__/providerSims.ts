@@ -48,6 +48,7 @@ export function createSims() {
             if (u.pathname.startsWith("/oauth/v1/access-tokens/")) return res(200, { hub_id: Number(hs.portal), hub_domain: "studio.hubspot.test", scopes: ["crm.objects.contacts.read"] });
             if (u.pathname.startsWith("/oauth/v1/refresh-tokens/") && method === "DELETE") { hs.revoked = true; return res(204, null); }
             if (auth !== hs.access) return res(401, { message: "expired token" });
+            if (u.pathname === "/account-info/v3/details") return res(200, { portalId: Number(hs.portal), accountType: "DEVELOPER_TEST" });
             const m = /^\/crm\/v3\/objects\/(contacts|companies|deals)(?:\/(search|[^/]+))?$/.exec(u.pathname);
             if (!m) return res(404, { message: "no route" });
             const store = hs[m[1] as "contacts" | "companies" | "deals"];
@@ -73,6 +74,7 @@ export function createSims() {
             if (!o) return res(404, { message: "not found" });
             if (method === "GET") return res(200, iso(o));
             if (method === "PATCH") { Object.assign(o.properties, body.properties); o.updatedAt = Date.now(); return res(200, iso(o)); }
+            if (method === "DELETE") { store.delete(o.id); return res(204, null); }
         }
 
         /* ---------------- Google ---------------- */

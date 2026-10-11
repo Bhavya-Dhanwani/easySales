@@ -13,7 +13,8 @@
     "test": "node --import tsx --test --test-concurrency=1 \"src/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
     "seed:demo": "tsx scripts/seed-demo.ts",
-    "eval": "tsx scripts/eval.ts"
+    "eval": "tsx scripts/eval.ts",
+    "pilot:hubspot": "tsx scripts/pilot-hubspot.ts"
   },
   "dependencies": {
     "@langchain/core": "^1.2.17",
