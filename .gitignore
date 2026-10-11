@@ -32,3 +32,6 @@ Thumbs.db
 .idea
 deploy/ec2/.env
 deploy/ec2/backups/
+deploy/cdk/app.env
+deploy/cdk/cdk.out/
+deploy/cdk/cdk-outputs.json

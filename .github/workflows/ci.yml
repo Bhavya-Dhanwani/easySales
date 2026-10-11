@@ -46,6 +46,24 @@ jobs:
       - run: npm run lint
       - run: npm run build
 
+  # the one-command AWS deployment must keep compiling and synthesizing (no AWS calls, no image build)
+  cdk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deploy/cdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: deploy/cdk/package-lock.json
+      - run: npm ci
+      - run: npm audit --audit-level=low
+      - run: npm run typecheck
+      - run: npx cdk synth --quiet -c secretKeys=LLM_API_KEY
+
   image:
     needs: [server, client]
     runs-on: ubuntu-latest

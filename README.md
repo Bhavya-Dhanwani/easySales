@@ -96,6 +96,7 @@ Each workspace connects its own sending account (SMTP) under **Settings → Emai
 
 - [docs/API.md](docs/API.md): endpoint reference (Sprints 1–4)
 - [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): environment, deploy, rollback, security
+- [docs/AWS_CDK.md](docs/AWS_CDK.md): one command (`npm run deploy` in `deploy/cdk`) builds the image, pushes it to ECR and deploys ECS on EC2 behind a load balancer and CloudFront, with an https URL
 - [docs/EC2.md](docs/EC2.md): run everything (app, agents, database, HTTPS) on one EC2 instance with `deploy/ec2/setup.sh`
 - [docs/RUNBOOK.md](docs/RUNBOOK.md): release targets, controlled launch, alerts, incidents, support, restore and rollback drills
 - [docs/PILOT_REVIEW.md](docs/PILOT_REVIEW.md): what improved, what is unproven, and how to review the pilot
