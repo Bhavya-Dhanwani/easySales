@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # One-command install / update of easySales on a fresh EC2 instance (Amazon Linux 2023 or Ubuntu).
-# Run from the repository root on the instance:   bash deploy/ec2/setup.sh
+# Run on the instance:   bash deploy/ec2/setup.sh        (or automatically from user-data.sh at launch)
 # Safe to run again: it never overwrites server/.env and only rebuilds and restarts the stack.
+# NONINTERACTIVE=1 starts right away with generated secrets; add your API keys to server/.env later.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 ROOT=$(pwd)
@@ -17,7 +18,7 @@ if ! command -v docker >/dev/null; then
         sudo apt-get update -y && sudo apt-get install -y docker.io git
     fi
     sudo systemctl enable --now docker
-    sudo usermod -aG docker "$USER"
+    sudo usermod -aG docker "$(id -un)"
 fi
 if ! sudo docker compose version >/dev/null 2>&1; then
     say "Installing the Docker Compose plugin"
@@ -62,10 +63,11 @@ if [ ! -f "$APP_ENV" ]; then
     setkv ENCRYPTION_KEY "$(openssl rand -hex 32)"
     setkv BILLING_WEBHOOK_SECRET "$(openssl rand -hex 24)"
     setkv RUN_WORKER false
+    [ -n "${ADMIN_EMAIL:-}" ] && setkv ADMIN_EMAILS "$ADMIN_EMAIL"
     NEEDS_EDIT=1
 fi
 
-if [ "${NEEDS_EDIT:-0}" = 1 ]; then
+if [ "${NEEDS_EDIT:-0}" = 1 ] && [ "${NONINTERACTIVE:-0}" != 1 ]; then
     cat <<EOF
 
 server/.env is ready with fresh secrets. Before starting, fill in (nano server/.env):
@@ -93,6 +95,9 @@ say "Waiting for HTTPS"
 for _ in $(seq 1 60); do
     if curl -fsS "https://$DOMAIN/api/health" >/dev/null 2>&1; then
         say "Live at https://$DOMAIN"
+        if ! grep -qE '^LLM_API_KEY=.+' "$APP_ENV" || ! grep -qE '^SMTP_PASS=.+' "$APP_ENV"; then
+            echo "Next: add LLM_API_KEY and the SMTP_* settings to $APP_ENV, then run: sudo bash $ROOT/deploy/ec2/setup.sh"
+        fi
         exit 0
     fi
     sleep 5

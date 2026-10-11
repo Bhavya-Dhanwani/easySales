@@ -32,41 +32,38 @@ EC2 → **Launch instance**:
     - HTTP (80) from anywhere, so the certificate can be issued
     - HTTPS (443) from anywhere
 - **Storage:** 20 GB gp3 (the limit is 50 GB)
+- **Advanced details → User data:** paste the contents of [`deploy/ec2/user-data.sh`](../deploy/ec2/user-data.sh), and change only `ADMIN_EMAIL` to your email.
+
+Click **Launch instance**. That's the whole install: on first boot the instance installs Docker, downloads the app, creates fresh secret keys, gets the HTTPS certificate and starts everything. It takes about 10 minutes.
 
 Remember the account allows **one instance**. Terminate a failed one before launching another.
 
-## 2. Install (on the instance)
+**Watching progress:** select the instance → **Actions → Monitor and troubleshoot → Get system log**. When it's done, you'll see `Live at https://<your-ip-with-dashes>.sslip.io`.
 
-Connect with **EC2 → Connect → EC2 Instance Connect** (in the browser), or with `ssh -i key.pem ec2-user@<public-ip>`. Then run:
+Only EC2 is used (instance, key pair, security group); no other AWS service is needed. Keep API keys out of User data, because anyone who can see the instance can read it.
 
-```bash
-sudo dnf install -y git
-git clone https://github.com/Bhavya-Dhanwani/easySales.git
-cd easySales
-bash deploy/ec2/setup.sh
-```
+## 2. Add your keys (once, about 2 minutes)
 
-If the repository is private, clone with a GitHub fine-grained token that has read-only access to that repository only.
-
-The first run installs Docker, adds swap, picks the address `https://<your-ip-with-dashes>.sslip.io`, and creates `server/.env` with fresh secrets. Then it stops so you can fill in the rest:
+The app is already running with HTTPS. Two things need your own keys: the AI agents and the sign-up emails. Connect to the instance with **Connect → EC2 Instance Connect** in the browser, or from your laptop with `ssh -i key.pem ec2-user@<public-ip>`. Then:
 
 ```bash
-nano server/.env
+sudo nano /opt/easysales/server/.env
 ```
 
 | Key | What to put |
 |---|---|
 | `LLM_API_KEY` (+ `LLM_BASE_URL`, `LLM_MODEL_SMART`, `LLM_MODEL_FAST`) | your AI provider; nothing AI-related runs without it |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SENDING_USER`, `SEND_MAIL=true` | for sign-up and password-reset emails (a Gmail app password on port 587 works; EC2 blocks port 25) |
-| `ADMIN_EMAILS` | your email address, which gives you the Operations page |
 | `TAVILY_API_KEY` | optional web search |
 | `NEATLOGS_API_KEY` | optional AI tracing |
 
-Run the script again. It builds, starts everything and waits until HTTPS answers:
+`ADMIN_EMAILS`, the URLs and all the secret keys are already filled in. Save the file (Ctrl+O, Enter, Ctrl+X), then apply it:
 
 ```bash
-bash deploy/ec2/setup.sh
+sudo bash /opt/easysales/deploy/ec2/setup.sh
 ```
+
+**Without User data (manual install):** connect as above and run `sudo dnf install -y git && sudo git clone https://github.com/Bhavya-Dhanwani/easySales.git /opt/easysales && sudo bash /opt/easysales/deploy/ec2/setup.sh`. It stops once so you can fill in `server/.env`; then run the last command again.
 
 ## 3. Set up the agent (in the app, once)
 
@@ -80,9 +77,9 @@ From then on, every day the agent finds new businesses in your niche, researches
 
 ## Day to day
 
-- **Updates:** `cd easySales && git pull && bash deploy/ec2/setup.sh`
-- **Logs:** `sudo docker compose -f deploy/ec2/docker-compose.yml logs -f --tail 100 worker` (or `api`, `caddy`)
-- **Backup:** `sudo docker compose -f deploy/ec2/docker-compose.yml exec mongodb mongodump --archive=/backups/easysales-$(date +%F).gz --gzip`. The file lands in `deploy/ec2/backups/`.
+- **Updates:** `cd /opt/easysales && sudo git pull && sudo bash deploy/ec2/setup.sh`
+- **Logs:** (in `/opt/easysales`) `sudo docker compose -f deploy/ec2/docker-compose.yml logs -f --tail 100 worker` (or `api`, `caddy`)
+- **Backup:** `sudo docker compose -f deploy/ec2/docker-compose.yml exec mongodb mongodump --archive=/backups/easysales-$(date +%F).gz --gzip`. The file lands in `/opt/easysales/deploy/ec2/backups/`.
 - **Restart:** `sudo docker compose -f deploy/ec2/docker-compose.yml restart`
 
 ## Things to know
