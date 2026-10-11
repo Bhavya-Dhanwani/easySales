@@ -4,14 +4,14 @@ import { api } from '../lib/api'
 import { Empty, PageHead, useLoad, useToast } from '../components/ui'
 import { CONSENT } from './Leads'
 
-interface Candidate { name: string; website?: string; domain?: string; email?: string; phone?: string; address?: string; country?: string; industry?: string; alreadyLead?: boolean }
+interface Candidate { name: string; website?: string; domain?: string; email?: string; phone?: string; address?: string; country?: string; industry?: string; source: 'openstreetmap' | 'web'; alreadyLead?: boolean }
 interface Result { candidates: Candidate[]; queries: { what: string; where: string }[]; failed: { what: string; where: string; error: string }[]; disqualified: number }
 
 // search OpenStreetMap inside the business's niche, pick the businesses worth contacting, import them into research
 export default function FindLeads() {
   const nav = useNavigate()
   const toast = useToast()
-  const { data: meta } = useLoad(() => api<{ niche: { searchTerms: string[]; searchAreas: string[] } }>('/v1/leads/discover/niche'), [])
+  const { data: meta } = useLoad(() => api<{ niche: { searchTerms: string[]; searchAreas: string[] }; webSearch: boolean }>('/v1/leads/discover/niche'), [])
   const [form, setForm] = useState({ what: '', where: '' })
   const [result, setResult] = useState<Result | null>(null)
   const [picked, setPicked] = useState<string[]>([])
@@ -38,7 +38,7 @@ export default function FindLeads() {
       const rows = result.candidates.filter((c) => picked.includes(keyOf(c))).map((c) => ({
         companyName: c.name, website: c.website ?? '', contactEmail: c.email ?? '', contactPhone: c.phone, industry: c.industry, country: c.country,
         description: c.address ? `Address: ${c.address}` : undefined,
-        consentBasis: consent, consentSource: `Found via OpenStreetMap search: ${label}`,
+        consentBasis: consent, consentSource: `Found via ${c.source === 'web' ? 'web' : 'OpenStreetMap'} search: ${label}`,
       }))
       const r = await api<{ job: { createdRows: number; duplicateRows: number; invalidRows: number } }>('/v1/leads/import', { body: { fileName: `Search: ${label}`, rows, source: 'discovery', research } })
       toast(`${r.job.createdRows} leads added${r.job.duplicateRows ? `, ${r.job.duplicateRows} already existed` : ''}${research ? ' and queued for research' : ''}`)
@@ -78,7 +78,7 @@ export default function FindLeads() {
             </select>
           </label>
         </div>
-        <p className="small muted" style={{ margin: 0 }}>Searches OpenStreetMap: free, no key needed.</p>
+        <p className="small muted" style={{ margin: 0 }}>{meta?.webSearch ? 'Searches OpenStreetMap and the web (Tavily).' : 'Searches OpenStreetMap: free, no key needed. Add TAVILY_API_KEY on the server to also search the web.'}</p>
         <div className="row-flex">
           <button className="btn lime" disabled={busy}>{busy ? 'Searching…' : 'Search'}</button>
           <button type="button" className="btn ghost" disabled={busy} onClick={() => search(null, true)}>Search my whole niche</button>
@@ -90,7 +90,7 @@ export default function FindLeads() {
         <>
           <div className="row-flex small" style={{ flexWrap: 'wrap' }}>
             <span className="muted">Searched {label} · {result.candidates.length} found{result.disqualified ? ` · ${result.disqualified} removed by your disqualifiers` : ''}</span>
-            {result.failed.map((f) => <span key={f.where + f.what} className="badge bad plain" title={f.error}>{f.what} in {f.where}: failed, try again later</span>)}
+            {result.failed.map((f) => <span key={f.where + f.what} className="badge bad plain" title={f.error}>{f.what} in {f.where}: {f.error}</span>)}
           </div>
 
           {!result.candidates.length ? <Empty title="No businesses found.">Try a broader description or a bigger area.</Empty> : (
@@ -98,7 +98,7 @@ export default function FindLeads() {
               <table className="table">
                 <thead><tr>
                   <th style={{ width: 36 }}><input type="checkbox" aria-label="Select all" checked={fresh.length > 0 && fresh.every((c) => picked.includes(keyOf(c)))} onChange={(e) => setPicked(e.target.checked ? fresh.map(keyOf) : [])} /></th>
-                  <th>Business</th><th>Contact</th>
+                  <th>Business</th><th>Contact</th><th>Found on</th>
                 </tr></thead>
                 <tbody>
                   {result.candidates.map((c) => (
@@ -108,6 +108,7 @@ export default function FindLeads() {
                         <div className="small muted">{[c.industry, c.address].filter(Boolean).join(' · ')}</div></td>
                       <td className="small">{c.website ? <a href={c.website} target="_blank" rel="noopener noreferrer nofollow">{c.domain}</a> : <span className="muted">no website</span>}
                         <div className="muted">{c.email ?? (c.website ? 'email found during research' : 'no email')}{c.phone ? ` · ${c.phone}` : ''}</div></td>
+                      <td className="small muted">{c.source === 'web' ? 'Web' : 'Map'}</td>
                     </tr>
                   ))}
                 </tbody>

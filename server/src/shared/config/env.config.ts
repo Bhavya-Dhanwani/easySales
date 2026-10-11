@@ -83,6 +83,8 @@ const envSchema = z.object({
     // lead discovery on OpenStreetMap (free, no key); the public server allows low volume only
     NOMINATIM_URL: z.string().url().default("https://nominatim.openstreetmap.org"),
     DISCOVERY_SEARCHES_PER_DAY: z.coerce.number().int().min(1).default(30),
+    // optional: Tavily web search alongside the map (free plan, 1,000 searches a month)
+    TAVILY_API_KEY: z.string().default(""),
 
     // Neatlogs AI tracing (off unless a key is set); content capture can be turned off (metadata only)
     NEATLOGS_API_KEY: z.string().default(""),

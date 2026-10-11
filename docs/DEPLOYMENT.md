@@ -26,6 +26,7 @@ Copy `server/.env.example` and set at least:
 | `SUPPORT_EMAILS` | optional; read-only support staff for the Operations page and workspace health |
 | `ALERT_WEBHOOK_URL` | optional; Slack or Discord incoming webhook |
 | `NOMINATIM_URL`, `DISCOVERY_SEARCHES_PER_DAY` | lead search on OpenStreetMap: free, no key. The public Nominatim server allows low volume only (about 1 request/second, no bulk use), hence the per-workspace daily cap; for heavy use, point `NOMINATIM_URL` at your own instance |
+| `TAVILY_API_KEY` | optional Tavily web search alongside the map (free plan: 1,000 searches a month, no card). The default cap of 30 searches a day stays under it |
 | `NEATLOGS_API_KEY`, `NEATLOGS_ENDPOINT`, `NEATLOGS_CAPTURE_CONTENT` | optional AI tracing in [Neatlogs](https://neatlogs.com): every agent run and model call (prompt, output, tokens, latency, errors) with workspace, agent, workflow and request id. Off when the key is empty. PII is redacted; `NEATLOGS_CAPTURE_CONTENT=false` sends timing, tokens and metadata only. Use a separate Neatlogs project per environment |
 | `RUN_WORKER` | `false` on API instances when you run a separate worker |
 

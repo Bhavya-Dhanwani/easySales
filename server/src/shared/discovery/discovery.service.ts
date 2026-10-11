@@ -21,6 +21,7 @@ export interface Candidate {
     address?: string;
     country?: string;
     industry?: string;
+    source: "openstreetmap" | "web";
     alreadyLead?: boolean;
 }
 
@@ -54,14 +55,44 @@ async function searchOpenStreetMap(what: string, where: string): Promise<Candida
         return {
             name: clean(r.name)!, website: site?.website, domain: site?.domain, email: clean(t.email ?? t["contact:email"])?.toLowerCase(),
             phone: clean(t.phone ?? t["contact:phone"], 40), address: clean(r.display_name, 300), country: clean(r.address?.country, 80),
-            industry: clean(r.type?.replace(/_/g, " "), 120),
+            industry: clean(r.type?.replace(/_/g, " "), 120), source: "openstreetmap" as const,
         };
     });
 }
 
+// listings, directories and social sites are not the business itself
+const NOT_A_BUSINESS = ["justdial.com", "indiamart.com", "sulekha.com", "yelp.com", "tripadvisor.com", "tripadvisor.in", "yellowpages.com", "facebook.com", "instagram.com",
+    "linkedin.com", "x.com", "twitter.com", "youtube.com", "wikipedia.org", "google.com", "practo.com", "zomato.com", "swiggy.com", "quora.com", "reddit.com",
+    "medium.com", "glassdoor.com", "indeed.com", "naukri.com", "amazon.in", "amazon.com", "flipkart.com", "clutch.co", "crunchbase.com", "lybrate.com", "magicpin.in"];
+const isDirectory = (domain: string) => NOT_A_BUSINESS.some((d) => domain === d || domain.endsWith(`.${d}`));
+
+/*
+    Tavily web search (free plan: 1,000 searches a month, no card). Turns on when TAVILY_API_KEY
+    is set. Finds businesses that are on the web but not on the map; only their own sites are kept.
+*/
+async function searchWeb(what: string, where: string): Promise<Candidate[]> {
+    type R = { results?: { title?: string; url?: string }[] };
+    const { status, data } = await request<R>("https://api.tavily.com/search", {
+        method: "POST", token: env.TAVILY_API_KEY,
+        body: { query: `${what} in ${where}`, search_depth: "basic", topic: "general", max_results: 20, exclude_domains: NOT_A_BUSINESS },
+    });
+    if (status === 401 || status === 403) throw new Error("Web search: API key rejected");
+    if (status === 432 || status === 433) throw new Error("Web search: monthly free searches used up");
+    if (status < 200 || status >= 300) throw new Error(`Web search: HTTP ${status}`);
+    return (data.results ?? []).flatMap((r) => {
+        const site = domainOf(r.url);
+        if (!site || isDirectory(site.domain) || !clean(r.title)) return [];
+        // "Smile Dental Clinic | Best dentist in Pune" -> "Smile Dental Clinic"
+        return [{ name: clean(r.title!.split(/\s[|\-–:·]\s/)[0])!, website: site.website, domain: site.domain, source: "web" as const }];
+    });
+}
+
+const SOURCES = () => [searchOpenStreetMap, ...(env.TAVILY_API_KEY ? [searchWeb] : [])];
+export const webSearchEnabled = () => Boolean(env.TAVILY_API_KEY);
+
 const nameKey = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
-// overlapping searches ("Pune" and "Pune, India") return the same business: keep it once (same website, else same name)
+// overlapping searches and sources return the same business: keep it once (same website, else same name; the map entry wins)
 export function dedupe(found: Candidate[]) {
     const seen = new Set<string>();
     return found.filter((c) => {
@@ -118,8 +149,9 @@ export async function nextNicheQueries(organizationId: Id, max: number) {
 /* -------------------------------- search -------------------------------- */
 
 /*
-    Runs each niche query on OpenStreetMap in parallel; a failed query is reported, the rest still
-    count. A per-workspace daily cap keeps the free server's usage low. Businesses matching a
+    Runs each niche query on OpenStreetMap (and Tavily web search when keyed) in parallel; a failed
+    search is reported, the rest still count. A per-workspace daily cap keeps the free usage low
+    (30 a day stays under Tavily's 1,000 a month). Businesses matching a
     disqualifier are dropped. Nothing is saved here: the user picks candidates and imports them.
 */
 export async function discoverLeads(organizationId: Id, userId: string, q: { queries: Query[]; limit: number }) {
@@ -128,10 +160,12 @@ export async function discoverLeads(organizationId: Id, userId: string, q: { que
     const today = await UsageRecord.countDocuments({ organizationId, kind: "discovery", createdAt: { $gte: startOfUtcDay() } });
     if (today + queries.length > env.DISCOVERY_SEARCHES_PER_DAY) throw new ApiError(429, `Daily lead search limit (${env.DISCOVERY_SEARCHES_PER_DAY}) reached; try again tomorrow.`);
 
-    const results = await Promise.allSettled(queries.map((x) => searchOpenStreetMap(x.what, x.where)));
-    for (const x of queries) await recordUsage(organizationId, { kind: "discovery", quantity: 1, provider: "openstreetmap", agent: "discovery", refId: `${x.what}|${x.where}` });
-    const failed = queries.flatMap((x, i) => (results[i].status === "rejected" ? [{ ...x, error: ((results[i] as PromiseRejectedResult).reason as Error).message.slice(0, 200) }] : []));
-    if (failed.length === queries.length) throw new ApiError(502, `Lead search failed: ${failed[0].error}. Try again in a minute.`);
+    const jobs = queries.flatMap((query) => SOURCES().map((search) => ({ query, search })));
+    const results = await Promise.allSettled(jobs.map((j) => j.search(j.query.what, j.query.where)));
+    const provider = webSearchEnabled() ? "openstreetmap,tavily" : "openstreetmap";
+    for (const x of queries) await recordUsage(organizationId, { kind: "discovery", quantity: 1, provider, agent: "discovery", refId: `${x.what}|${x.where}` });
+    const failed = jobs.flatMap((j, i) => (results[i].status === "rejected" ? [{ ...j.query, error: ((results[i] as PromiseRejectedResult).reason as Error).message.slice(0, 200) }] : []));
+    if (failed.length === jobs.length) throw new ApiError(502, `Lead search failed: ${failed[0].error}. Try again in a minute.`);
 
     const found = dedupe(results.flatMap((r) => (r.status === "fulfilled" ? r.value : [])));
     // the profile's disqualifiers apply before anyone sees the list
@@ -151,5 +185,5 @@ export async function discoverLeads(organizationId: Id, userId: string, q: { que
 
     const disqualified = found.length - kept.length;
     await audit({ organizationId, actorType: "user", actorId: userId, action: "lead.discover", outcome: "success", metadata: { queries, failed, found: candidates.length, disqualified } });
-    return { candidates, queries, failed, disqualified };
+    return { candidates, queries, failed, disqualified, webSearch: webSearchEnabled() };
 }

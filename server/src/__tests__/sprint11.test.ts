@@ -45,7 +45,7 @@ function fakeOsm(calls: string[]) {
     });
 }
 
-test("lead discovery: locked to the niche, OpenStreetMap only, deduplicated, disqualifiers applied, daily cap", async () => {
+test("lead discovery: locked to the niche, OpenStreetMap without a web key, deduplicated, disqualifiers applied, daily cap", async () => {
     Object.assign(env, { DISCOVERY_SEARCHES_PER_DAY: 5 });
     const calls: string[] = [];
     fakeOsm(calls);
@@ -102,6 +102,45 @@ test("lead discovery: locked to the niche, OpenStreetMap only, deduplicated, dis
     const other = await createAccount("Other");
     assert.equal(await Lead.countDocuments({ organizationId: other.organizationId }), 0);
     Object.assign(env, { DISCOVERY_SEARCHES_PER_DAY: 30 });
+});
+
+test("lead discovery: Tavily web search adds businesses not on the map; directories skipped; its failures are reported", async () => {
+    Object.assign(env, { TAVILY_API_KEY: "tvly-test" });
+    let tavilyDown = false;
+    setIntegrationHttp(async (url, init) => {
+        if (url.includes("api.tavily.com")) {
+            assert.equal(init.headers?.Authorization, "Bearer tvly-test");
+            const body = JSON.parse(init.body ?? "{}");
+            assert.equal(body.query, "Dentist in Pune");
+            assert.ok(body.exclude_domains.includes("justdial.com"), "directories excluded at the source too");
+            if (tavilyDown) return reply(432, { detail: "usage limit" });
+            return reply(200, { results: [
+                { title: "Best Dentists in Pune - Justdial", url: "https://www.justdial.com/Pune/Dentists" },
+                { title: "Smile Dental | Dentist in Pune", url: "https://smiledental.test/contact" },
+                { title: "Pearl Dental Studio | Dentist in Pune", url: "https://pearldental.test/about" },
+                { title: "Kids Dental Care - Pediatric dentist", url: "https://kidsdental.test/" },
+            ] });
+        }
+        return reply(200, [{ name: "Smile Dental", type: "dentist", extratags: { website: "https://smiledental.test", phone: "+91 20 1234 5678" } }]);
+    });
+    const owner = await createAccount("WebFinder");
+    await BusinessProfile.updateOne({ organizationId: owner.organizationId }, { $set: {
+        "idealCustomerProfile.searchTerms": ["Dentist"], "idealCustomerProfile.searchAreas": ["Pune"], "idealCustomerProfile.disqualifiers": ["Pearl"],
+    } }, { upsert: true });
+    assert.equal((await request(app).get("/api/v1/leads/discover/niche").set(owner.auth)).body.data.webSearch, true);
+
+    const r = await request(app).post("/api/v1/leads/discover").set(owner.auth).send({ what: "Dentist", where: "Pune" });
+    assert.equal(r.status, 200);
+    const found = r.body.data.candidates.map((c: { name: string; source: string; phone?: string }) => [c.name, c.source, c.phone ?? null]);
+    assert.deepEqual(found, [["Smile Dental", "openstreetmap", "+91 20 1234 5678"], ["Kids Dental Care", "web", null]], "map entry wins the duplicate; directory and disqualified dropped");
+
+    // Tavily out of free searches: the map results still come back, the failure is shown
+    tavilyDown = true;
+    const r2 = await request(app).post("/api/v1/leads/discover").set(owner.auth).send({ what: "Dentist", where: "Pune" });
+    assert.equal(r2.status, 200);
+    assert.equal(r2.body.data.candidates.length, 1);
+    assert.match(r2.body.data.failed[0].error, /monthly free searches used up/);
+    Object.assign(env, { TAVILY_API_KEY: "" });
 });
 
 test("research finds a public contact email on the prospect's own site", () => {

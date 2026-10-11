@@ -21,7 +21,7 @@ import { activeWorkflowFor, startWorkflow } from "../../../shared/workflows/work
 import { getCurrentPolicy, normalizeEmail } from "../../../shared/policy/policy.service.js";
 import { requalify } from "../../../shared/research/research.service.js";
 import { createProposal } from "../../../shared/proposals/proposal.service.js";
-import { discoverLeads, nextNicheQueries, nicheOf } from "../../../shared/discovery/discovery.service.js";
+import { discoverLeads, nextNicheQueries, nicheOf, webSearchEnabled } from "../../../shared/discovery/discovery.service.js";
 import { escapeRegex, nextCursor, oid, pageParams, str } from "../../../shared/utils/request.util.js";
 import Ok from "../../../shared/responses/Ok.response.js";
 import Created from "../../../shared/responses/Created.response.js";
@@ -133,7 +133,7 @@ router.post("/", authorize("leads.write"), validate(LeadInputSchema), async (req
 */
 router.get("/discover/niche", authorize("leads.read"), async (req: Request, res: Response) => {
     const { searchTerms, searchAreas } = await nicheOf(ctxOf(req).organizationId);
-    return Ok(res, "Search niche", { niche: { searchTerms, searchAreas } });
+    return Ok(res, "Search niche", { niche: { searchTerms, searchAreas }, webSearch: webSearchEnabled() });
 });
 
 /*
