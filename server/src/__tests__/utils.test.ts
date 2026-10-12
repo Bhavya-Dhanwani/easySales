@@ -111,3 +111,39 @@ test("account emails: the code is highlighted digit by digit, values are escaped
     assert.doesNotMatch(invite.html, /<script>/, "business names cannot inject markup");
     assert.match(invite.html, /Smile &lt;script&gt;/);
 });
+
+test("AI fallback: when the primary endpoint rejects its key, Mistral answers the same call; the bad key then cools down", async () => {
+    const { default: env } = await import("../shared/config/env.config.js");
+    const { getLlm, resetProviderCooldowns } = await import("../agents/llm.js");
+    const { z } = await import("zod");
+    const before = { LLM_API_KEY: env.LLM_API_KEY, LLM_BASE_URL: env.LLM_BASE_URL, MISTRAL_API_KEY: env.MISTRAL_API_KEY };
+    Object.assign(env, { LLM_API_KEY: "sk-dead", LLM_BASE_URL: "https://llm.primary.test/v1", MISTRAL_API_KEY: "mistral-test-key" });
+    resetProviderCooldowns();
+    const calls: string[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        calls.push(new URL(url).host);
+        if (url.includes("primary.test")) return new Response(JSON.stringify({ error: { message: "Invalid proxy server token passed", type: "token_not_found_in_db", code: "401" } }), { status: 401, headers: { "content-type": "application/json" } });
+        return new Response(JSON.stringify({
+            id: "cmpl-1", object: "chat.completion", created: 1, model: "mistral-large-latest",
+            choices: [{ index: 0, finish_reason: "tool_calls", message: { role: "assistant", content: "", tool_calls: [{ id: "call1abc2", type: "function", function: { name: "fallback_check", arguments: "{\"answer\":\"ok\"}" } }] } }],
+            usage: { prompt_tokens: 12, completion_tokens: 4, total_tokens: 16 },
+        }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+    try {
+        const call = { agent: "fallback_check", schema: z.object({ answer: z.string() }), system: "Answer.", user: "Say ok." };
+        const r = await getLlm().structured(call);
+        assert.deepEqual(r.data, { answer: "ok" });
+        assert.equal(r.model, "mistral:ministral-14b-latest");
+        assert.deepEqual([r.inputTokens, r.outputTokens], [12, 4]);
+        assert.deepEqual(calls, ["llm.primary.test", "api.mistral.ai"], "primary tried once (401 is not retried), then Mistral");
+        calls.length = 0;
+        await getLlm().structured(call);
+        assert.deepEqual(calls, ["api.mistral.ai"], "the rejected key is skipped while it cools down");
+    } finally {
+        globalThis.fetch = realFetch;
+        Object.assign(env, before);
+        resetProviderCooldowns();
+    }
+});

@@ -95,6 +95,12 @@ const envSchema = z.object({
     // optional: Tavily web search alongside the map (free plan, 1,000 searches a month)
     TAVILY_API_KEY: z.string().default(""),
 
+    // fallback AI provider: used when the primary endpoint fails (bad key, outage, rate limit), or alone if it is the only one set.
+    // Defaults are models on Mistral's free plan (mistral-large is not; small/medium are rate-limited there)
+    MISTRAL_API_KEY: z.string().default(""),
+    MISTRAL_MODEL_SMART: z.string().default("ministral-14b-latest"),
+    MISTRAL_MODEL_FAST: z.string().default("ministral-8b-latest"),
+
     // Neatlogs AI tracing (off unless a key is set); content capture can be turned off (metadata only)
     NEATLOGS_API_KEY: z.string().default(""),
     NEATLOGS_ENDPOINT: z.string().url().default("https://ingest.neatlogs.com"),

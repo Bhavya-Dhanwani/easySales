@@ -14,3 +14,4 @@ process.env.BREVO_API_KEY = "";
 process.env.PLATFORM_FROM_EMAIL = "";
 process.env.PLATFORM_REPLY_EMAIL = "";
 process.env.PLATFORM_REPLY_PASSWORD = "";
+process.env.MISTRAL_API_KEY = "";
