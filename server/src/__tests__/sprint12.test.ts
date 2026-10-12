@@ -129,6 +129,32 @@ test("skipping the mailbox: mail goes from the platform address (Brevo), replies
     Object.assign(env, OFF);
 });
 
+test("without Brevo, the SMTP account in .env is the platform address; replies read from that same mailbox", async () => {
+    const { default: transporter } = await import("../shared/config/mail.config.js");
+    const sent: Record<string, unknown>[] = [];
+    const original = transporter.sendMail.bind(transporter);
+    (transporter as unknown as { sendMail: (m: Record<string, unknown>) => Promise<unknown> }).sendMail = async (m) => { sent.push(m); return { messageId: String(m.messageId) }; };
+    Object.assign(env, OFF, { SMTP_USER: "owner.mail@gmail.com", SMTP_PASS: "app-pass" });
+    try {
+        const owner = await createAccount("SmtpPlatform");
+        const info = (await request(app).get("/api/v1/integrations/email").set(owner.auth)).body.data;
+        assert.equal(info.platform.from, "owner.mail@gmail.com");
+        assert.equal(info.platform.readsReplies, true, "replies come back to the same Gmail");
+        const { getEmailProvider } = await import("../providers/email.provider.js");
+        const provider = await getEmailProvider(owner.organizationId);
+        const conversationId = "6aca696f24ac249b0bc1932c";
+        const r = await provider.send({ to: "dr@clinic.test", subject: "Hi", text: "Hello", messageKey: "m1", replyKey: conversationId });
+        assert.equal(provider.name, "platform");
+        assert.match(String(sent[0].from), /^".* via easySales" <owner\.mail@gmail\.com>$/);
+        assert.match(String(sent[0].replyTo), /<owner\.mail\+r-6aca696f24ac249b0bc1932c\.[0-9a-f]{16}@gmail\.com>$/);
+        assert.equal(conversationFromAddress(String(sent[0].replyTo).match(/<(.*)>/)![1]), conversationId);
+        assert.equal(r.providerMessageId, "<m1@gmail.com>");
+    } finally {
+        (transporter as unknown as { sendMail: typeof original }).sendMail = original;
+        Object.assign(env, OFF, { SMTP_USER: "", SMTP_PASS: "" });
+    }
+});
+
 test("account emails (sign-up codes) go through Brevo when it is configured", async () => {
     Object.assign(env, PLATFORM);
     sendMail("new@user.test", "Verify your email", "<p>Your code is 123456</p>");

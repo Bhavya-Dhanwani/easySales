@@ -10,7 +10,7 @@ import { decryptSecret } from "../shared/utils/crypto.util.js";
 import BusinessProfile from "../shared/models/businessProfile.model.js";
 import Organization from "../shared/models/organization.model.js";
 import { replyAddressFor } from "../shared/conversations/replyAddress.js";
-import { brevoEnabled, brevoSend } from "./brevo.js";
+import { brevoEnabled, brevoSend, platformFromEmail, platformMailEnabled, platformReplyInbox } from "./brevo.js";
 import ApiError from "../shared/utils/ApiError.util.js";
 
 export interface OutboundEmail {
@@ -62,7 +62,7 @@ class SmtpProvider implements EmailProvider {
 }
 
 /*
-    The platform address (Brevo) for workspaces that skipped connecting their own mailbox:
+    The platform address (Brevo, else the SMTP account in .env) for workspaces that skipped connecting their own mailbox:
     "<Business> via easySales" <platform sender>. Replies go to a signed per-conversation
     address on the platform reply inbox, which the worker reads.
 */
@@ -70,16 +70,26 @@ class PlatformProvider implements EmailProvider {
     readonly name = "platform";
     constructor(private businessName: string) {}
     async send(email: OutboundEmail) {
-        const replyTo = env.PLATFORM_REPLY_EMAIL && email.replyKey ? { email: replyAddressFor(email.replyKey), name: this.businessName } : undefined;
-        const headers: Record<string, string> = { "List-Unsubscribe": `<mailto:${replyTo?.email ?? env.PLATFORM_FROM_EMAIL}?subject=unsubscribe>` };
+        const from = platformFromEmail();
+        const name = `${this.businessName} via ${env.PLATFORM_FROM_NAME}`.replace(/"/g, "").slice(0, 70);
+        const replyTo = platformReplyInbox() && email.replyKey ? { email: replyAddressFor(email.replyKey), name: this.businessName } : undefined;
+        const unsubscribe = `<mailto:${replyTo?.email ?? from}?subject=unsubscribe>`;
+        if (!brevoEnabled()) {
+            // the SMTP account from .env (e.g. Gmail): threading headers and Message-ID set here
+            const messageId = messageIdFor(email.messageKey, from.split("@")[1]);
+            await transporter.sendMail({
+                from: `"${name}" <${from}>`, replyTo: replyTo ? `"${this.businessName.replace(/"/g, "")}" <${replyTo.email}>` : undefined,
+                to: email.to, subject: email.subject, text: email.text, messageId,
+                inReplyTo: email.inReplyTo, references: email.references, headers: { "List-Unsubscribe": unsubscribe },
+            });
+            return { providerMessageId: messageId };
+        }
+        const headers: Record<string, string> = { "List-Unsubscribe": unsubscribe };
         if (email.inReplyTo) headers["In-Reply-To"] = email.inReplyTo;
         if (email.references?.length) headers.References = email.references.join(" ");
-        const sent = await brevoSend({
-            sender: { name: `${this.businessName} via ${env.PLATFORM_FROM_NAME}`.slice(0, 70), email: env.PLATFORM_FROM_EMAIL },
-            to: [{ email: email.to }], replyTo, subject: email.subject, textContent: email.text, headers,
-        });
+        const sent = await brevoSend({ sender: { name, email: from }, to: [{ email: email.to }], replyTo, subject: email.subject, textContent: email.text, headers });
         // Brevo's id is the message's Message-ID: replies and follow-ups thread on it
-        return { providerMessageId: sent.messageId ?? messageIdFor(email.messageKey, env.PLATFORM_FROM_EMAIL.split("@")[1]) };
+        return { providerMessageId: sent.messageId ?? messageIdFor(email.messageKey, from.split("@")[1]) };
     }
 }
 
@@ -118,7 +128,7 @@ export async function getEmailProvider(organizationId: mongoose.Types.ObjectId |
         return provider;
     }
     // no own mailbox (or the user skipped): the platform address
-    if (brevoEnabled()) return new PlatformProvider(await senderName(organizationId));
+    if (platformMailEnabled()) return new PlatformProvider(await senderName(organizationId));
     if (env.NODE_ENV === "production") throw new NoEmailIntegrationError();
     return env.SEND_MAIL ? new SmtpProvider(transporter, env.SENDING_USER) : new LogProvider();
 }

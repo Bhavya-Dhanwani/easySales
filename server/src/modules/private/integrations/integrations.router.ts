@@ -16,7 +16,7 @@ import { encryptSecret, decryptSecret } from "../../../shared/utils/crypto.util.
 import { assertPublicHost } from "../../../shared/utils/safeFetch.util.js";
 import { imapHostFor, verifyImap } from "../../../shared/conversations/imap.service.js";
 import { detectMailServers } from "../../../shared/conversations/mailServers.js";
-import { brevoEnabled } from "../../../providers/brevo.js";
+import { platformFromEmail, platformMailEnabled, platformReplyInbox } from "../../../providers/brevo.js";
 import BusinessProfile from "../../../shared/models/businessProfile.model.js";
 import Organization from "../../../shared/models/organization.model.js";
 import { createTransport } from "../../../providers/email.provider.js";
@@ -114,7 +114,7 @@ router.get("/email", authorize("org.manage"), async (req: Request, res: Response
     return Ok(res, "Email integration", {
         integration: view(await EmailIntegration.findOne({ organizationId: ctx.organizationId })),
         // without an own mailbox, mail goes from the platform address ("<Business> via easySales")
-        platform: brevoEnabled() ? { from: env.PLATFORM_FROM_EMAIL, name: `${await businessName(ctx.organizationId)} via ${env.PLATFORM_FROM_NAME}`, readsReplies: Boolean(env.PLATFORM_REPLY_EMAIL && env.PLATFORM_REPLY_PASSWORD) } : null,
+        platform: platformMailEnabled() ? { from: platformFromEmail(), name: `${await businessName(ctx.organizationId)} via ${env.PLATFORM_FROM_NAME}`, readsReplies: Boolean(platformReplyInbox()) } : null,
     });
 });
 

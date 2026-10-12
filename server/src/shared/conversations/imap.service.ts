@@ -11,7 +11,7 @@ import { conversationFromAddress } from "./replyAddress.js";
 import { detectMailServers } from "./mailServers.js";
 import { decryptSecret } from "../utils/crypto.util.js";
 import { assertPublicHost } from "../utils/safeFetch.util.js";
-import env from "../config/env.config.js";
+import { platformReplyInbox } from "../../providers/brevo.js";
 import logger from "../config/logger.config.js";
 
 type Id = mongoose.Types.ObjectId;
@@ -139,7 +139,8 @@ async function routePlatform(envelope: Envelope): Promise<Route | null> {
 }
 
 async function pollPlatformInbox() {
-    if (!env.PLATFORM_REPLY_EMAIL || !env.PLATFORM_REPLY_PASSWORD) return;
+    const inbox = platformReplyInbox();
+    if (!inbox) return;
     await PlatformInbox.updateOne({ key: "replies" }, { $setOnInsert: { key: "replies" } }, { upsert: true }).catch((e) => { if (e.code !== 11000) throw e; });
     // claiming this minute's poll keeps two workers off the same inbox
     const state = await PlatformInbox.findOneAndUpdate(
@@ -148,8 +149,8 @@ async function pollPlatformInbox() {
     );
     if (!state) return;
     try {
-        const servers = await detectMailServers(env.PLATFORM_REPLY_EMAIL);
-        const r = await readNew({ host: servers.imapHost, port: 993, user: env.PLATFORM_REPLY_EMAIL }, env.PLATFORM_REPLY_PASSWORD, state, "platform", routePlatform);
+        const servers = await detectMailServers(inbox.email);
+        const r = await readNew({ host: servers.imapHost, port: 993, user: inbox.email }, inbox.password, state, "platform", routePlatform);
         await PlatformInbox.updateOne({ key: "replies" }, r.uidValidity !== state.uidValidity
             ? { uidValidity: r.uidValidity, lastUid: r.lastUid, lastError: null }
             : { $max: { lastUid: r.lastUid }, lastError: null });

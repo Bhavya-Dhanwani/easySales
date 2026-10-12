@@ -7,3 +7,10 @@ process.env.LLM_API_KEY = "sk-test-secret-must-never-reach-a-prompt";
 process.env.TAVILY_API_KEY = "";
 process.env.NEATLOGS_API_KEY = "";
 process.env.HUBSPOT_PILOT_TOKEN = "";
+// a developer's real mailbox must never be used by tests (platform mail would otherwise send for real)
+process.env.SMTP_USER = "";
+process.env.SMTP_PASS = "";
+process.env.BREVO_API_KEY = "";
+process.env.PLATFORM_FROM_EMAIL = "";
+process.env.PLATFORM_REPLY_EMAIL = "";
+process.env.PLATFORM_REPLY_PASSWORD = "";

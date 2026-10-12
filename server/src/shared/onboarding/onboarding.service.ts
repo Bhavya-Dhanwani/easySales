@@ -1,5 +1,5 @@
 // Importing modules
-import { brevoEnabled } from "../../providers/brevo.js";
+import { platformMailEnabled } from "../../providers/brevo.js";
 import mongoose from "mongoose";
 import Organization from "../models/organization.model.js";
 import BusinessProfile from "../models/businessProfile.model.js";
@@ -42,7 +42,7 @@ export async function onboardingStatus(organizationId: Id) {
         voice: [!org?.onboarding?.voiceConfirmedAt && "Confirm brand voice and the claims the agents may make"].filter(Boolean) as string[],
         email: [
             // the platform address (Brevo) counts: connecting an own mailbox is optional when it is set
-            !email && !brevoEnabled() && "Connect your email account",
+            !email && !platformMailEnabled() && "Connect your email account",
             email && email.status !== "connected" && `Email account needs attention: ${email.lastError ?? email.status}`,
         ].filter(Boolean) as string[],
         limits: [
