@@ -1,4 +1,5 @@
 // Importing modules
+import { otpEmail, resetEmail } from "../../../shared/emails/templates.js";
 import { isPlatformAdmin, isSupport } from "../../admin/admin.router.js";
 import { Request, Response } from "express";
 import { AuthenticatedRequest, SignupRequest, LoginRequest, SessionRequest, GoogleLoginRequest, ForgotPasswordRequest, ResetPasswordRequest } from "./auth.types.js";
@@ -69,11 +70,8 @@ class AuthController {
 			expiresAt: new Date(Date.now() + OTP_EXPIRY_TIME),
 		});
 
-		sendMail(
-			user.email,
-			"Verify your email",
-			`Your OTP is ${otp}. It will expire in ${OTP_EXPIRY_TIME / 60000} minutes.`,
-		);
+		const verify = otpEmail(otp, OTP_EXPIRY_TIME / 60000);
+		sendMail(user.email, verify.subject, verify.html, verify.text);
 
 		// returning otp verification response with access token
 		return Created(res, "Otp Sent Successfully for verification", {
@@ -148,7 +146,8 @@ class AuthController {
 		await this.tokenDao.deleteTokenByEmail(email, "otp");
 		const otp = generateOTPToken();
 		await this.tokenDao.createToken({ email, type: "otp", value: otp, expiresAt: new Date(Date.now() + OTP_EXPIRY_TIME) });
-		sendMail(email, "Verify your email", `Your OTP is ${otp}. It will expire in ${OTP_EXPIRY_TIME / 60000} minutes.`);
+		const verify = otpEmail(otp, OTP_EXPIRY_TIME / 60000);
+		sendMail(email, verify.subject, verify.html, verify.text);
 		return Ok(res, "Verification code sent");
 	};
 
@@ -359,11 +358,8 @@ class AuthController {
 		});
 
 		// sending the reset password token as a magic link to the email
-		sendMail(
-			email,
-			"Your reset Password Link",
-			`Click the link and reset your password <a href="${env.FRONTEND_URL}/reset-password/${resetToken}">Reset Your Password</a>`,
-		);
+		const reset = resetEmail(`${env.FRONTEND_URL}/reset-password/${resetToken}`, RESET_PASSWORD_TOKEN_EXPIRY_TIME / 60000);
+		sendMail(email, reset.subject, reset.html, reset.text);
 
 		// returning success response
 		return Ok(res, "Reset password Mail sent Successfully");

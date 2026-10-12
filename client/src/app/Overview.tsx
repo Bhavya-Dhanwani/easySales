@@ -1,7 +1,7 @@
 import { Link } from 'react-router'
 import { api } from '../lib/api'
 import { ago, human } from '../lib/format'
-import { photo } from '../lib/photos'
+import { photo, photoAlt } from '../lib/photos'
 import { LEAD_STATUSES, type AuditEvent, type BusinessProfile } from '../lib/types'
 import { Badge, Empty, PageHead, Spinner, Stat, useLoad } from '../components/ui'
 import { useAuth } from '../lib/auth'
@@ -61,7 +61,7 @@ export default function Overview() {
             <p style={{ margin: 0, color: '#b9cbc1' }}>Average fit {summary.averageScore ?? '—'} · evidence coverage {summary.averageEvidenceCoverage ?? '—'}% across {summary.researched} researched leads.</p>
           </>}
         </div>
-        <img src={photo('owner', 500, 320)} alt="" />
+        <img src={photo('owner')} alt={photoAlt('owner')} />
       </div>
 
       <div className="grid-4">

@@ -97,3 +97,15 @@ test("AI provider errors: no key material reaches users, a rejected key is perma
     assert.match(providerError({ message: "fetch failed ECONNREFUSED" }).message, /could not be reached/);
     assert.equal(providerError({ status: 500, message: "upstream says key=abc" }).message, "The AI provider returned an error (HTTP 500); it will be retried.");
 });
+
+test("account emails: the code is highlighted digit by digit, values are escaped, a plain-text part exists", async () => {
+    const { otpEmail, inviteEmail } = await import("../shared/emails/templates.js");
+    const otp = otpEmail("482913", 10);
+    assert.equal(otp.subject, "482913 is your easySales code");
+    assert.equal((otp.html.match(/class="es-digit es-digit-cell"/g) ?? []).length, 6, "one box per digit");
+    assert.match(otp.html, /prefers-reduced-motion/, "motion respects the user's setting");
+    assert.match(otp.text, /482913/);
+    const invite = inviteEmail("Smile <script>x</script>", "member", "https://example.test/login");
+    assert.doesNotMatch(invite.html, /<script>/, "business names cannot inject markup");
+    assert.match(invite.html, /Smile &lt;script&gt;/);
+});

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { useAuth } from '../lib/auth'
-import { photo, type PhotoKey } from '../lib/photos'
+import { photo, photoAlt, type PhotoKey } from '../lib/photos'
 import ScrollVelocity from '../components/bits/ScrollVelocity'
 import ImageTrail from '../components/bits/ImageTrail'
 import CountUp from '../components/bits/CountUp'
@@ -24,11 +24,12 @@ function DuotoneFilter() {
 }
 
 // duotone at rest, real colour on hover
-function Photo({ k, w = 900, h, alt = '', className = '' }: { k: PhotoKey; w?: number; h?: number; alt?: string; className?: string }) {
-  const src = photo(k, w, h)
+function Photo({ k, alt, className = '' }: { k: PhotoKey; w?: number; h?: number; alt?: string; className?: string }) {
+  const src = photo(k)
   return (
     <span className={`ph ${className}`}>
-      <img src={src} alt={alt} loading="lazy" />
+      <img src={src} alt={alt ?? photoAlt(k)} loading="lazy" />
+      {/* the same photo again as the duotone layer: announced once, by the image above */}
       <img src={src} alt="" aria-hidden="true" loading="lazy" className="duo" />
     </span>
   )
@@ -154,7 +155,7 @@ export default function Landing() {
           <h2 className="giant-2">Every row is a person.</h2>
           <p>easySales reads each prospect before it writes a word, so the first email sounds like someone did their homework.</p>
         </div>
-        <ImageTrail items={(['call', 'founder', 'deal', 'writing', 'call2', 'founder2', 'suit', 'call3', 'meeting', 'counter'] as PhotoKey[]).map((k) => photo(k, 380, 360))} variant={1} />
+        <ImageTrail items={(['call', 'founder', 'deal', 'writing', 'call2', 'founder2', 'suit', 'call3', 'meeting', 'counter'] as PhotoKey[]).map((k) => photo(k))} variant={1} />
       </section>
 
       {/* ruled process table */}

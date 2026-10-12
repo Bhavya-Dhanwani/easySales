@@ -3,7 +3,7 @@ import { Link, Navigate, useNavigate, useParams } from 'react-router'
 import { Logo, useToast } from '../components/ui'
 import { useAuth } from '../lib/auth'
 import { api } from '../lib/api'
-import { photo } from '../lib/photos'
+import { photo, photoAlt } from '../lib/photos'
 
 function Shell({ index, title, children, foot }: { index: string; title: ReactNode; children: ReactNode; foot?: ReactNode }) {
   return (
@@ -18,7 +18,7 @@ function Shell({ index, title, children, foot }: { index: string; title: ReactNo
         </div>
       </main>
       <aside className="auth-side">
-        <img src={photo('owner', 1000, 1300)} alt="" />
+        <img src={photo('owner')} alt={photoAlt('owner')} />
         <p className="auth-quote">The AI <em>reasons</em>.<br />Your policy <em>decides</em>.<br />Code <em>executes</em>.</p>
         <span className="small" style={{ color: '#d6e3db' }}>Every agent action is checked, approved where you want, and audited.</span>
       </aside>

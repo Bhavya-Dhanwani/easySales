@@ -1,24 +1,26 @@
 // Unsplash photos (free Unsplash licence) about selling: calls, deals, founders, desks.
-// Shown in a single forest/paper duotone (see <Photo>) so they read as one set.
+// Served from /photos (public/photos, WebP): the site's security policy only allows its own images,
+// and visitors aren't sent to a third party. Shown in one forest/paper duotone (see <Photo>).
+// Each value is the photo's alt text, written from what the picture actually shows.
 export const PHOTOS = {
-  call: 'photo-1758611974917-f7f7a58b74b0',
-  call2: 'photo-1758873268528-af4613d099b6',
-  call3: 'photo-1758876018582-e7573baf5306',
-  deal: 'photo-1521791136064-7986c2920216',
-  deal2: 'photo-1596633607590-7156877ef734',
-  founder: 'photo-1758691737644-ef8be18256c3',
-  founder2: 'photo-1758691737587-7630b4d31d16',
-  writing: 'photo-1642522029686-5485ea7e6042',
-  suit: 'photo-1758519288445-5847dd89f313',
-  counter: 'photo-1556742049-0cfed4f6a45d',
-  meeting: 'photo-1600880292203-757bb62b4baf',
-  presenting: 'photo-1542744173-8e7e53415bb0',
-  // kept for app screens
-  owner: 'photo-1531058240690-006c446962d8',
+  call: 'A smiling woman on a phone call at her desk at home, with a laptop and notebook',
+  call2: 'A smiling woman in glasses on a phone call at a laptop in a busy office',
+  call3: 'A woman in glasses explaining something on a phone call at her desk',
+  deal: 'Close-up of two people in shirts shaking hands',
+  deal2: 'Close-up of two hands in a firm handshake against a warm yellow background',
+  founder: 'Portrait of a man in glasses and a beige blazer in an office',
+  founder2: 'Portrait of a smiling woman with short blonde hair in an office',
+  writing: 'A man in a suit on a desk phone, one hand on a page of handwritten notes',
+  suit: 'A smiling man in a suit on a phone call, taking notes beside his laptop',
+  counter: 'A shop owner at the till serving a smiling customer who pays by phone',
+  meeting: 'Two colleagues high-fiving across a desk covered in reports',
+  presenting: 'A man presenting to a team seated around a meeting table with laptops',
+  owner: 'A florist working at the counter of her flower shop',
 } as const
 
 export type PhotoKey = keyof typeof PHOTOS
 
-export const photo = (key: PhotoKey, w = 900, h?: number) =>
-  `https://images.unsplash.com/${PHOTOS[key]}?w=${w}${h ? `&h=${h}` : ''}&q=75&auto=format&fit=crop`
+export const photo = (key: PhotoKey) => `/photos/${key}.webp`
 
+// alt text for every photo, so screen readers describe what is shown
+export const photoAlt = (key: PhotoKey) => PHOTOS[key]

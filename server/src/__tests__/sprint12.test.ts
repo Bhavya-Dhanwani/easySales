@@ -86,7 +86,7 @@ test("skipping the mailbox: mail goes from the platform address (Brevo), replies
     fakeLlm({ research, outreach: draft, follow_up: draft, conversation: { intent: "interested", confidence: 0.9, summary: "Interested.", extractedFacts: [], recommendedAction: "reply", returnDate: "", reply: "Great, does Tuesday work?" } });
     const inbox = fakeInbox({ uidValidity: 3, messages: [] });
     const owner = await createAccount("Skipper");
-    assert.match(outbox[0]?.subject ?? "", /verif/i, "the sign-up email itself went through Brevo");
+    assert.match(outbox[0]?.subject ?? "", /is your easySales code$/, "the sign-up email itself went through Brevo");
     outbox = [];
     await request(app).put("/api/v1/policies").set(owner.auth).send(AUTO);
     const lead = (await request(app).post("/api/v1/leads").set(owner.auth).send({ companyName: "Bright Clinic", contactEmail: "dr@brightclinic.test", consentBasis: "legitimate_interest" })).body.data.lead;
@@ -157,7 +157,7 @@ test("without Brevo, the SMTP account in .env is the platform address; replies r
 
 test("account emails (sign-up codes) go through Brevo when it is configured", async () => {
     Object.assign(env, PLATFORM);
-    sendMail("new@user.test", "Verify your email", "<p>Your code is 123456</p>");
+    sendMail("new@user.test", "Verify your email", "<p>Your code is 123456</p>", "Your code is 123456");
     await new Promise((r) => setTimeout(r, 10));
     assert.deepEqual(outbox.map((m) => [m.to[0].email, m.subject, m.sender.email]), [["new@user.test", "Verify your email", "hello@easysales.test"]]);
     Object.assign(env, OFF);

@@ -1,4 +1,5 @@
 // Importing modules
+import { inviteEmail } from "../../../shared/emails/templates.js";
 import { assertQuota } from "../../../shared/billing/subscription.service.js";
 import express, { Request, Response } from "express";
 import { z } from "zod";
@@ -128,7 +129,8 @@ router.post("/members", authorize("members.manage"), validate(InviteSchema), asy
         invitedBy: new mongoose.Types.ObjectId(ctx.userId),
     });
     const org = await Organization.findById(ctx.organizationId).lean();
-    sendMail(req.body.email, `You're invited to ${org?.name} on easySales`, `You have been invited as ${req.body.role}. Sign in or create an account with this email at <a href="${env.FRONTEND_URL}/login">${env.FRONTEND_URL}</a>.`);
+    const invite = inviteEmail(org?.name ?? "a workspace", req.body.role, `${env.FRONTEND_URL}/login`);
+    sendMail(req.body.email, invite.subject, invite.html, invite.text);
     await audit({ organizationId: ctx.organizationId, actorType: "user", actorId: ctx.userId, action: "member.invite", targetType: "membership", targetId: membership._id.toString(), outcome: "success", metadata: { email: req.body.email, role: req.body.role } });
     return Created(res, "Invitation sent", { membership });
 });

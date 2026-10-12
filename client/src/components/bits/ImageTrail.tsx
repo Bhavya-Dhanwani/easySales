@@ -1402,7 +1402,7 @@ export default function ImageTrail({ items = [], variant = 1 }: ImageTrailProps)
   }, [variant, items]);
 
   return (
-    <div className="content" ref={containerRef}>
+    <div className="content" ref={containerRef} aria-hidden="true">
       {items.map((url, i) => (
         <div className="content__img" key={i}>
           <div className="content__img-inner" style={{ backgroundImage: `url(${url})` }} />
