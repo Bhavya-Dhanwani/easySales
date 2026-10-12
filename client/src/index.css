@@ -44,6 +44,17 @@
 
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+
+/* scrollbars: thin, rounded, in the brand's ink; a light thumb on dark surfaces.
+   scrollbar-width/-color cover Firefox and Chrome/Edge 121+; the ::-webkit-scrollbar rules
+   cover Safari (Chrome ignores them once the standard properties are set). */
+:root { --scroll-thumb: rgba(14, 31, 24, 0.22); --scroll-thumb-hover: rgba(14, 31, 24, 0.4); }
+.side, .card.dark { --scroll-thumb: rgba(214, 227, 219, 0.26); --scroll-thumb-hover: rgba(214, 227, 219, 0.5); }
+* { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--scroll-thumb); background-clip: padding-box; border: 3px solid transparent; border-radius: var(--r-pill); }
+::-webkit-scrollbar-thumb:hover { background-color: var(--scroll-thumb-hover); }
 body {
   margin: 0;
   background: var(--bg);
