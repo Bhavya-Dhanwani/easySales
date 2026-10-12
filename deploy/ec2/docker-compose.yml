@@ -23,6 +23,8 @@ services:
   api:
     build: ../..
     image: easysales:latest
+    # built here from the repository, never pulled from a registry
+    pull_policy: build
     # migrations run before every start; a failed migration keeps the old data untouched
     command: ["sh", "-c", "node dist/migrate.js && node dist/server.js"]
     env_file: ../../server/.env

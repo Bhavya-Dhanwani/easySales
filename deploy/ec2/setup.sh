@@ -26,6 +26,16 @@ if ! sudo docker compose version >/dev/null 2>&1; then
     sudo curl -fsSL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m)" -o /usr/local/lib/docker/cli-plugins/docker-compose
     sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 fi
+# Compose builds with buildx >= 0.17; Amazon Linux's docker package ships an older one or none
+BUILDX=$(sudo docker buildx version 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1 | tr -d v || true)
+if [ -z "$BUILDX" ] || [ "$(printf '%s\n0.17.0\n' "$BUILDX" | sort -V | head -1)" != "0.17.0" ]; then
+    say "Installing Docker buildx"
+    case "$(uname -m)" in aarch64|arm64) ARCH=arm64 ;; *) ARCH=amd64 ;; esac
+    TAG=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/docker/buildx/releases/latest | sed 's#.*/##')
+    sudo mkdir -p /usr/local/lib/docker/cli-plugins
+    sudo curl -fsSL "https://github.com/docker/buildx/releases/download/$TAG/buildx-$TAG.linux-$ARCH" -o /usr/local/lib/docker/cli-plugins/docker-buildx
+    sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
+fi
 if ! swapon --show | grep -q .; then
     say "Adding 2 GB swap (the build needs it on a small instance)"
     sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
