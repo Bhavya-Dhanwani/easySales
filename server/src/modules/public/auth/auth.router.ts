@@ -1,7 +1,7 @@
 // Importing modules
 import express from "express";
 import AuthController from "./auth.controller.js";
-import { signupValidators, loginValidators, forgotPasswordValidators, resetPasswordValidators, googleLoginValidators } from "./auth.validator.js";
+import { signupValidators, loginValidators, forgotPasswordValidators, resetPasswordValidators } from "./auth.validator.js";
 import authMiddleware from "../../../shared/middlewares/auth.middleware.js";
 import refreshMiddleware from "../../../shared/middlewares/refresh.middleware.js";
 import { authRateLimit } from "../../../shared/middlewares/index.middleware.js";
@@ -70,14 +70,9 @@ router.post("/logout", refreshMiddleware, authController.logout);
 */
 router.post("/logoutall", authMiddleware, authController.logoutAll);
 
-/*
-    @route POST /api/auth/google-login
-    @desc Login user via Google
-    @access Public
-*/
-router.post("/google-login", googleLoginValidators, authController.googleLogin);
-router.get("/google", authController.googleRedirect);
-router.get("/google/callback", authController.googleCallback);
+// Sign in with Google is switched off for now (no Google OAuth client is configured); the
+// controller methods stay, so turning it back on is re-adding the routes:
+//   POST /google-login (googleLoginValidators, authController.googleLogin), GET /google, GET /google/callback
 
 /*
     @route POST /api/auth/forgot-password
