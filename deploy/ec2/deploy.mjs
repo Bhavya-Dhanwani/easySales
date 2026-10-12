@@ -134,12 +134,18 @@ if (!ssh(ip, "sudo cloud-init status --wait >/dev/null; test -f /opt/easysales/s
 
 say("Sending configuration and updating to the latest code");
 // keys arrive on stdin and are merged into server/.env in place (values are never parsed by a shell)
-const merge = `import sys,re
-p='/opt/easysales/server/.env'; s=open(p).read()
-for line in sys.stdin.read().splitlines():
-    k,v=line.split('=',1)
-    s=re.sub(r'(?m)^'+k+'=.*$', lambda m: k+'='+v, s) if re.search(r'(?m)^'+k+'=', s) else s+('' if s.endswith('\\n') else '\\n')+k+'='+v+'\\n'
-open(p,'w').write(s)`;
+const merge = [
+    "import sys, re",
+    "p = '/opt/easysales/server/.env'",
+    "s = open(p).read()",
+    "for line in sys.stdin.read().splitlines():",
+    "    k, v = line.split('=', 1)",
+    "    if re.search(r'(?m)^' + k + '=', s):",
+    "        s = re.sub(r'(?m)^' + k + '=.*$', lambda m: k + '=' + v, s)",
+    "    else:",
+    "        s = s + ('' if s.endswith(chr(10)) else chr(10)) + k + '=' + v + chr(10)",
+    "open(p, 'w').write(s)",
+].join(String.fromCharCode(10));
 // the script travels base64-encoded so no shell ever interprets it
 const script = Buffer.from(merge).toString("base64");
 if (!ssh(ip, `echo ${script} | base64 -d > /tmp/easysales-merge.py && sudo python3 /tmp/easysales-merge.py; rc=$?; rm -f /tmp/easysales-merge.py; exit $rc`, appEnv.join("\n") + "\n")) fail("Could not write the configuration.");
