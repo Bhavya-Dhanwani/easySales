@@ -21,7 +21,7 @@ We looked at three tools for easySales. We kept one, **Neatlogs**, because it do
 - **Safe to leave on:** opt-in by key, never on in tests, and if Neatlogs is unreachable the app keeps working with tracing off. Traces are flushed on shutdown.
 - **Live in production:** the API and the worker both log `Neatlogs tracing enabled`.
 
-**Where it already paid off:** our primary AI endpoint started rejecting its key (`401`). We added Mistral as an automatic fallback. Neatlogs shows exactly that on each run: the call to the primary failing, then the same request answered by `mistral:ministral-14b-latest`. That told us the fallback works and what each agent costs.
+**Where it matters right now:** our primary AI endpoint started rejecting its key (`401`), so we added Mistral as an automatic fallback. Both attempts go through the traced gateway, so a run's trace is where you see the primary call fail and the same request answered by `mistral:ministral-14b-latest`, with the tokens each agent used.
 
 **The one compromise, made openly:** the Neatlogs SDK pulls in OpenTelemetry 1.x, which has one moderate advisory (`GHSA-8988-4f7v-96qf`). It is in code we never call: it parses inbound trace headers, which easySales never reads. Our CI fails on *every* security advisory, so we allowed exactly this one, with the reason written down and a review date ([`server/audit-allowlist.json`](../server/audit-allowlist.json), review by 2027-01-11). The allowlist entry fails CI if it is still there after the advisory disappears, so it cannot be forgotten.
 
