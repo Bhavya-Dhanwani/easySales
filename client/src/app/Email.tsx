@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { useNavigate } from 'react-router'
 import { api } from '../lib/api'
 import { ago } from '../lib/format'
 import type { EmailIntegration } from '../lib/types'
@@ -29,8 +30,10 @@ function SecretOnce({ secret, url }: { secret: string; url: string }) {
 export default function Email() {
   const { org } = useAuth()
   const toast = useToast()
-  const { data, error, reload } = useLoad(() => api<{ integration: EmailIntegration | null }>('/v1/integrations/email'), [org?.id])
+  const nav = useNavigate()
+  const { data, error, reload } = useLoad(() => api<{ integration: EmailIntegration | null; platform: { from: string; name: string; readsReplies: boolean } | null }>('/v1/integrations/email'), [org?.id])
   const [form, setForm] = useState({ fromName: '', fromEmail: '', replyTo: '', host: '', port: 587, secure: false, user: '', password: '', readInbox: true, imapHost: '' })
+  const [advanced, setAdvanced] = useState(false)
   const [busy, setBusy] = useState(false)
   const [secret, setSecret] = useState<string | null>(null)
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [k]: e.target.type === 'checkbox' ? e.target.checked : k === 'port' ? Number(e.target.value) : e.target.value })
@@ -43,7 +46,11 @@ export default function Email() {
   async function connect(e: FormEvent) {
     e.preventDefault()
     await run(async () => {
-      const r = await api<{ webhookSecret: string }>('/v1/integrations/email/connect', { body: { ...form, replyTo: form.replyTo || undefined, imapHost: form.imapHost || undefined } })
+      // simple mode: just the email and app password; the server finds the mail servers
+      const body = advanced
+        ? { ...form, fromName: form.fromName || undefined, replyTo: form.replyTo || undefined, imapHost: form.imapHost || undefined, user: form.user || undefined }
+        : { fromEmail: form.fromEmail, password: form.password, fromName: form.fromName || undefined, readInbox: form.readInbox }
+      const r = await api<{ webhookSecret: string }>('/v1/integrations/email/connect', { body })
       setSecret(r.webhookSecret)
       setForm({ ...form, password: '' })
     }, 'Email account connected')
@@ -52,10 +59,16 @@ export default function Email() {
   if (error) return <div className="empty"><p className="h2">Only owners and admins manage email accounts.</p></div>
   if (!data) return <Spinner label="Loading" />
   const i = data.integration
+  const platform = data.platform
+  const domain = form.fromEmail.split('@')[1]?.toLowerCase() ?? ''
+  const help = /gmail|googlemail/.test(domain) ? ['Create a Gmail app password', 'https://myaccount.google.com/apppasswords']
+    : /outlook|hotmail|live\.com/.test(domain) ? ['Create an Outlook app password', 'https://account.live.com/proofs/AppPassword']
+    : /yahoo/.test(domain) ? ['Create a Yahoo app password', 'https://login.yahoo.com/account/security/app-passwords']
+    : /zoho/.test(domain) ? ['Create a Zoho app password', 'https://accounts.zoho.com/home#security/app_password'] : null
 
   return (
     <div className="stack lg fade-in" style={{ maxWidth: 860 }}>
-      <PageHead index="Email account" title={<>Send from <span className="hl">your own address.</span></>} />
+      <PageHead index="Email account" title={<>Where your emails <span className="hl">come from.</span></>} />
       {secret && i && <SecretOnce secret={secret} url={i.webhookUrl} />}
 
       {i ? (
@@ -80,37 +93,55 @@ export default function Email() {
             <button className="btn danger sm" disabled={busy} onClick={() => window.confirm('Disconnect this account? Outreach stops until you connect another.') && run(() => api('/v1/integrations/email', { method: 'DELETE' }), 'Disconnected')}>Disconnect</button>
           </div>
         </div>
+      ) : platform ? (
+        <div className="card stack">
+          <div className="row-flex between">
+            <div>
+              <div className="h2">Sending from easySales mail</div>
+              <div className="small muted">{platform.name} &lt;{platform.from}&gt;</div>
+            </div>
+            <Badge status="ok">ready</Badge>
+          </div>
+          <p className="small muted" style={{ margin: 0 }}>{platform.readsReplies ? 'Replies come back here automatically and the agent answers them.' : 'Replies go to the easySales address.'} Connect your own mailbox below if you want emails to come from your address instead. It's optional.</p>
+        </div>
       ) : (
         <p className="muted" style={{ margin: 0 }}>Connect the mailbox your outreach should come from. We sign in once to verify, then store the password encrypted; it is never shown again.</p>
       )}
 
       <form className="card stack" onSubmit={connect}>
-        <div className="row-flex between"><div className="h2">{i ? 'Replace account' : 'Connect via SMTP'}</div>
-          <select className="select" style={{ width: 240 }} defaultValue="" aria-label="Provider preset" onChange={(e) => { const p = PRESETS.find(([n]) => n === e.target.value); if (p) setForm({ ...form, host: p[1], port: p[2] }) }}>
-            <option value="">Provider preset…</option>
-            {PRESETS.map(([n]) => <option key={n}>{n}</option>)}
-          </select>
-        </div>
+        <div className="h2">{i ? 'Replace your email' : platform ? 'Use your own email (optional)' : 'Connect your email'}</div>
         <div className="grid-3">
-          <label className="field"><span>Sender name</span><input className="input" required value={form.fromName} onChange={set('fromName')} placeholder="Priya at Pixel Forge" /></label>
-          <label className="field"><span>Sender email</span><input className="input" type="email" required value={form.fromEmail} onChange={set('fromEmail')} /></label>
-          <label className="field"><span>Reply-to (optional)</span><input className="input" type="email" value={form.replyTo} onChange={set('replyTo')} /></label>
-          <label className="field"><span>SMTP host</span><input className="input" required value={form.host} onChange={set('host')} placeholder="smtp.gmail.com" /></label>
-          <label className="field"><span>Port</span>
-            <select className="select" value={form.port} onChange={(e) => setForm({ ...form, port: Number(e.target.value), secure: e.target.value === '465' })}>{[587, 465, 2525, 25].map((p) => <option key={p}>{p}</option>)}</select>
-          </label>
-          <label className="check" style={{ alignSelf: 'end', paddingBottom: 10 }}><input type="checkbox" checked={form.secure} onChange={set('secure')} /> TLS from the start (port 465)</label>
-          <label className="field"><span>Username</span><input className="input" required autoComplete="off" value={form.user} onChange={set('user')} /></label>
-          <label className="field"><span>Password / app password</span><input className="input" type="password" required autoComplete="new-password" value={form.password} onChange={set('password')} /><small>Gmail and Outlook need an app password.</small></label>
+          <label className="field"><span>Your email *</span><input className="input" type="email" required value={form.fromEmail} onChange={set('fromEmail')} placeholder="you@yourbusiness.com" autoComplete="email" /></label>
+          <label className="field"><span>App password *</span><input className="input" type="password" required autoComplete="new-password" value={form.password} onChange={set('password')} />
+            <small>Not your normal password. {help ? <a href={help[1]} target="_blank" rel="noopener noreferrer">{help[0]}</a> : 'Most providers call it an "app password".'}</small></label>
+          <label className="field"><span>Sender name (optional)</span><input className="input" value={form.fromName} onChange={set('fromName')} placeholder="Priya at Pixel Forge" /></label>
         </div>
-        <label className="check"><input type="checkbox" checked={form.readInbox} onChange={set('readInbox')} /> Read replies from this inbox (IMAP, same login)</label>
-        {form.readInbox && (
-          <div className="grid-3">
-            <label className="field"><span>IMAP host (optional)</span><input className="input" value={form.imapHost} onChange={set('imapHost')} placeholder={form.host ? form.host.replace(/^(smtp|mail)\./, 'imap.') : 'imap.gmail.com'} /><small>Left empty, it is worked out from the SMTP host.</small></label>
-            <p className="small muted" style={{ gridColumn: 'span 2', margin: 0, alignSelf: 'center' }}>Checked every minute, read-only. Only replies from your leads are opened and stored; other mail is never downloaded. Turn IMAP on in Gmail or Outlook settings first.</p>
+        <label className="check"><input type="checkbox" checked={form.readInbox} onChange={set('readInbox')} /> Let the agent read replies from this inbox (read-only; only replies from your leads are opened)</label>
+        <button type="button" className="btn ghost sm" style={{ justifySelf: 'start' }} onClick={() => setAdvanced(!advanced)} aria-expanded={advanced}>{advanced ? 'Hide' : 'Show'} advanced settings</button>
+        {advanced && (
+          <div className="stack">
+            <p className="small muted" style={{ margin: 0 }}>Only if detection fails: fill in your provider's server settings.</p>
+            <div className="grid-3">
+              <label className="field"><span>Provider preset</span>
+                <select className="select" defaultValue="" onChange={(e) => { const p = PRESETS.find(([n]) => n === e.target.value); if (p) setForm({ ...form, host: p[1], port: p[2] }) }}>
+                  <option value="">Choose…</option>
+                  {PRESETS.map(([n]) => <option key={n}>{n}</option>)}
+                </select>
+              </label>
+              <label className="field"><span>SMTP host</span><input className="input" required value={form.host} onChange={set('host')} placeholder="smtp.yourprovider.com" /></label>
+              <label className="field"><span>Port</span>
+                <select className="select" value={form.port} onChange={(e) => setForm({ ...form, port: Number(e.target.value), secure: e.target.value === '465' })}>{[587, 465, 2525, 25].map((p) => <option key={p}>{p}</option>)}</select>
+              </label>
+              <label className="field"><span>Username (if not your email)</span><input className="input" autoComplete="off" value={form.user} onChange={set('user')} /></label>
+              <label className="field"><span>Reply-to (optional)</span><input className="input" type="email" value={form.replyTo} onChange={set('replyTo')} /></label>
+              <label className="field"><span>IMAP host (optional)</span><input className="input" value={form.imapHost} onChange={set('imapHost')} placeholder={form.host ? form.host.replace(/^(smtp|mail)\./, 'imap.') : 'imap.yourprovider.com'} /></label>
+            </div>
           </div>
         )}
-        <div><button className="btn lime" disabled={busy}>{busy ? 'Verifying…' : 'Verify & connect'}</button></div>
+        <div className="row-flex">
+          <button className="btn lime" disabled={busy}>{busy ? 'Checking…' : i ? 'Replace email' : 'Connect my email'}</button>
+          {!i && platform && <button type="button" className="btn ghost" onClick={() => nav('/app')}>Skip, use easySales mail</button>}
+        </div>
       </form>
     </div>
   )

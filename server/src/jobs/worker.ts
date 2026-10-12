@@ -293,6 +293,7 @@ async function dispatchMessage(msg: InstanceType<typeof Message>) {
         const { providerMessageId } = await provider.send({
             to: msg.to, subject: msg.subject ?? "", text: msg.body, messageKey: msg._id.toString(),
             inReplyTo: msg.inReplyTo ?? undefined, references: msg.references?.length ? msg.references : undefined,
+            replyKey: msg.conversationId ? String(msg.conversationId) : undefined,
         });
         const now = new Date();
         await Message.updateOne(scope, { status: "sent", sentAt: now, providerMessageId, lockedUntil: null, error: null });

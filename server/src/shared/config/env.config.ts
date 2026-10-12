@@ -80,6 +80,15 @@ const envSchema = z.object({
     // above this many due jobs the worker defers non-critical scheduling (follow-ups, campaign enrolment)
     QUEUE_BACKPRESSURE: z.coerce.number().int().min(1).default(500),
 
+    // platform email (Brevo): workspaces without their own mailbox send from this address, and account
+    // emails (sign-up codes, password resets) go out through it. PLATFORM_FROM_EMAIL must be a verified Brevo sender.
+    BREVO_API_KEY: z.string().default(""),
+    PLATFORM_FROM_EMAIL: z.union([z.literal(""), z.string().email()]).default(""),
+    PLATFORM_FROM_NAME: z.string().default("easySales"),
+    // the inbox replies to platform mail come back to (read over IMAP with an app password)
+    PLATFORM_REPLY_EMAIL: z.union([z.literal(""), z.string().email()]).default(""),
+    PLATFORM_REPLY_PASSWORD: z.string().default(""),
+
     // lead discovery on OpenStreetMap (free, no key); the public server allows low volume only
     NOMINATIM_URL: z.string().url().default("https://nominatim.openstreetmap.org"),
     DISCOVERY_SEARCHES_PER_DAY: z.coerce.number().int().min(1).default(30),

@@ -7,6 +7,10 @@ import env from "../shared/config/env.config.js";
 import logger from "../shared/config/logger.config.js";
 import EmailIntegration from "../shared/models/emailIntegration.model.js";
 import { decryptSecret } from "../shared/utils/crypto.util.js";
+import BusinessProfile from "../shared/models/businessProfile.model.js";
+import Organization from "../shared/models/organization.model.js";
+import { replyAddressFor } from "../shared/conversations/replyAddress.js";
+import { brevoEnabled, brevoSend } from "./brevo.js";
 import ApiError from "../shared/utils/ApiError.util.js";
 
 export interface OutboundEmail {
@@ -17,6 +21,8 @@ export interface OutboundEmail {
     messageKey: string;
     inReplyTo?: string;
     references?: string[];
+    // the conversation: replies to platform mail are routed back by it
+    replyKey?: string;
 }
 
 export interface EmailProvider {
@@ -55,6 +61,28 @@ class SmtpProvider implements EmailProvider {
     }
 }
 
+/*
+    The platform address (Brevo) for workspaces that skipped connecting their own mailbox:
+    "<Business> via easySales" <platform sender>. Replies go to a signed per-conversation
+    address on the platform reply inbox, which the worker reads.
+*/
+class PlatformProvider implements EmailProvider {
+    readonly name = "platform";
+    constructor(private businessName: string) {}
+    async send(email: OutboundEmail) {
+        const replyTo = env.PLATFORM_REPLY_EMAIL && email.replyKey ? { email: replyAddressFor(email.replyKey), name: this.businessName } : undefined;
+        const headers: Record<string, string> = { "List-Unsubscribe": `<mailto:${replyTo?.email ?? env.PLATFORM_FROM_EMAIL}?subject=unsubscribe>` };
+        if (email.inReplyTo) headers["In-Reply-To"] = email.inReplyTo;
+        if (email.references?.length) headers.References = email.references.join(" ");
+        const sent = await brevoSend({
+            sender: { name: `${this.businessName} via ${env.PLATFORM_FROM_NAME}`.slice(0, 70), email: env.PLATFORM_FROM_EMAIL },
+            to: [{ email: email.to }], replyTo, subject: email.subject, textContent: email.text, headers,
+        });
+        // Brevo's id is the message's Message-ID: replies and follow-ups thread on it
+        return { providerMessageId: sent.messageId ?? messageIdFor(email.messageKey, env.PLATFORM_FROM_EMAIL.split("@")[1]) };
+    }
+}
+
 // development delivery: logs instead of sending, behaves like a successful provider
 class LogProvider implements EmailProvider {
     constructor(readonly name = "log", private domain = "easysales.local") {}
@@ -89,12 +117,20 @@ export async function getEmailProvider(organizationId: mongoose.Types.ObjectId |
         cache.set(key, { at: integration.updatedAt.getTime(), provider });
         return provider;
     }
+    // no own mailbox (or the user skipped): the platform address
+    if (brevoEnabled()) return new PlatformProvider(await senderName(organizationId));
     if (env.NODE_ENV === "production") throw new NoEmailIntegrationError();
     return env.SEND_MAIL ? new SmtpProvider(transporter, env.SENDING_USER) : new LogProvider();
 }
 
 export function createTransport(smtp: { host: string; port: number; secure?: boolean | null; user: string }, password: string) {
     return nodemailer.createTransport({ host: smtp.host, port: smtp.port, secure: Boolean(smtp.secure), auth: { user: smtp.user, pass: password }, connectionTimeout: 10_000, greetingTimeout: 10_000, socketTimeout: 30_000 });
+}
+
+async function senderName(organizationId: mongoose.Types.ObjectId | string) {
+    const profile = await BusinessProfile.findOne({ organizationId }, { businessName: 1 }).lean();
+    if (profile?.businessName) return profile.businessName;
+    return (await Organization.findOne({ _id: organizationId }, { name: 1 }).lean())?.name ?? "Your business";
 }
 
 // tests and future adapters (SES, Postmark, Gmail API) plug in here

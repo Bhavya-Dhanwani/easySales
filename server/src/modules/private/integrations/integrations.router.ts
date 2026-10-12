@@ -15,6 +15,10 @@ import { audit } from "../../../shared/audit/audit.service.js";
 import { encryptSecret, decryptSecret } from "../../../shared/utils/crypto.util.js";
 import { assertPublicHost } from "../../../shared/utils/safeFetch.util.js";
 import { imapHostFor, verifyImap } from "../../../shared/conversations/imap.service.js";
+import { detectMailServers } from "../../../shared/conversations/mailServers.js";
+import { brevoEnabled } from "../../../providers/brevo.js";
+import BusinessProfile from "../../../shared/models/businessProfile.model.js";
+import Organization from "../../../shared/models/organization.model.js";
 import { createTransport } from "../../../providers/email.provider.js";
 import env from "../../../shared/config/env.config.js";
 import Ok from "../../../shared/responses/Ok.response.js";
@@ -25,14 +29,15 @@ const router = express.Router();
 
 const SMTP_PORTS = [25, 465, 587, 2525];
 
+// only the email and its app password are required; servers are detected unless given (advanced)
 const ConnectSchema = z.object({
-    fromName: z.string().trim().min(1).max(120),
+    fromName: z.string().trim().min(1).max(120).optional(),
     fromEmail: z.string().trim().toLowerCase().email(),
     replyTo: z.union([z.literal(""), z.string().trim().toLowerCase().email()]).optional(),
-    host: z.string().trim().min(3).max(253).regex(/^[a-z0-9.-]+$/i, "Invalid host"),
-    port: z.coerce.number().int().refine((p) => SMTP_PORTS.includes(p), `Port must be one of ${SMTP_PORTS.join(", ")}`),
-    secure: z.boolean().default(false),
-    user: z.string().trim().min(1).max(200),
+    host: z.union([z.literal(""), z.string().trim().min(3).max(253).regex(/^[a-z0-9.-]+$/i, "Invalid host")]).optional(),
+    port: z.coerce.number().int().refine((p) => SMTP_PORTS.includes(p), `Port must be one of ${SMTP_PORTS.join(", ")}`).optional(),
+    secure: z.boolean().optional(),
+    user: z.union([z.literal(""), z.string().trim().min(1).max(200)]).optional(),
     password: z.string().min(1).max(500),
     // read replies from the inbox over IMAP with the same login (default host derived from the SMTP host)
     readInbox: z.boolean().default(true),
@@ -46,6 +51,10 @@ export let verifySmtp = async (smtp: { host: string; port: number; secure: boole
     await createTransport(smtp, password).verify();
 };
 export const setSmtpVerifier = (fn: typeof verifySmtp) => { verifySmtp = fn; };
+
+const businessName = async (organizationId: unknown) =>
+    (await BusinessProfile.findOne({ organizationId }, { businessName: 1 }).lean())?.businessName
+    || (await Organization.findOne({ _id: organizationId }, { name: 1 }).lean())?.name || "Sales";
 
 const webhookUrl = (id: unknown) => `${env.FRONTEND_URL.replace(/\/$/, "")}/api/webhooks/email/${id}`;
 
@@ -102,7 +111,11 @@ export async function healthCheckIntegrations(olderThanMs = 6 * 3600_000) {
 */
 router.get("/email", authorize("org.manage"), async (req: Request, res: Response) => {
     const ctx = ctxOf(req);
-    return Ok(res, "Email integration", { integration: view(await EmailIntegration.findOne({ organizationId: ctx.organizationId })) });
+    return Ok(res, "Email integration", {
+        integration: view(await EmailIntegration.findOne({ organizationId: ctx.organizationId })),
+        // without an own mailbox, mail goes from the platform address ("<Business> via easySales")
+        platform: brevoEnabled() ? { from: env.PLATFORM_FROM_EMAIL, name: `${await businessName(ctx.organizationId)} via ${env.PLATFORM_FROM_NAME}`, readsReplies: Boolean(env.PLATFORM_REPLY_EMAIL && env.PLATFORM_REPLY_PASSWORD) } : null,
+    });
 });
 
 /*
@@ -112,16 +125,22 @@ router.get("/email", authorize("org.manage"), async (req: Request, res: Response
 router.post("/email/connect", authorize("org.manage"), validate(ConnectSchema), async (req: Request, res: Response) => {
     const ctx = ctxOf(req);
     const b = req.body as z.infer<typeof ConnectSchema>;
-    const smtp = { host: b.host, port: b.port, secure: b.secure, user: b.user };
+    const detected = b.host ? null : await detectMailServers(b.fromEmail);
+    const port = b.port ?? detected?.smtpPort ?? 587;
+    const smtp = { host: b.host || detected!.smtpHost, port, secure: b.secure ?? (b.port ? port === 465 : detected!.secure), user: b.user || b.fromEmail };
+    const fromName = b.fromName || await businessName(ctx.organizationId);
     try {
         await verifySmtp(smtp, b.password);
     } catch (error) {
-        await audit({ organizationId: ctx.organizationId, actorType: "user", actorId: ctx.userId, action: "integration.email.connect", outcome: "failure", metadata: { host: b.host, error: (error as Error).message } });
-        throw new BadRequest(`Could not sign in to ${b.host}: ${(error as Error).message}`);
+        await audit({ organizationId: ctx.organizationId, actorType: "user", actorId: ctx.userId, action: "integration.email.connect", outcome: "failure", metadata: { host: smtp.host, error: (error as Error).message } });
+        const hint = /auth|credential|password|535|534/i.test((error as Error).message)
+            ? " Use an app password, not your normal password (Gmail: Google Account → Security → 2-Step Verification → App passwords)."
+            : "";
+        throw new BadRequest(`Could not sign in to ${detected?.provider ?? smtp.host} (${smtp.host}): ${(error as Error).message}.${hint}`);
     }
     let imap: Record<string, unknown> = { enabled: false };
     if (b.readInbox) {
-        const cfg = { host: b.imapHost || imapHostFor(b.host), port: b.imapPort, user: b.user };
+        const cfg = { host: b.imapHost || detected?.imapHost || imapHostFor(smtp.host), port: b.imapPort, user: smtp.user };
         try {
             imap = { enabled: true, host: cfg.host, port: cfg.port, ...(await verifyImap(cfg, b.password)) };
         } catch (error) {
@@ -132,13 +151,13 @@ router.post("/email/connect", authorize("org.manage"), validate(ConnectSchema), 
     const integration = await EmailIntegration.findOneAndUpdate(
         { organizationId: ctx.organizationId },
         {
-            organizationId: ctx.organizationId, provider: "smtp", status: "connected", fromName: b.fromName, fromEmail: b.fromEmail, replyTo: b.replyTo || undefined,
+            organizationId: ctx.organizationId, provider: "smtp", status: "connected", fromName, fromEmail: b.fromEmail, replyTo: b.replyTo || undefined,
             smtp: { ...smtp, passwordEnc: encryptSecret(b.password) }, imap, webhookSecretEnc: encryptSecret(webhookSecret),
             lastVerifiedAt: new Date(), lastError: null, connectedBy: ctx.userId,
         },
         { upsert: true, new: true, runValidators: true },
     );
-    await audit({ organizationId: ctx.organizationId, actorType: "user", actorId: ctx.userId, action: "integration.email.connect", targetType: "integration", targetId: String(integration._id), outcome: "success", metadata: { host: b.host, fromEmail: b.fromEmail, readInbox: Boolean(imap.enabled) } });
+    await audit({ organizationId: ctx.organizationId, actorType: "user", actorId: ctx.userId, action: "integration.email.connect", targetType: "integration", targetId: String(integration._id), outcome: "success", metadata: { host: smtp.host, fromEmail: b.fromEmail, readInbox: Boolean(imap.enabled) } });
     return Ok(res, "Email account connected", { integration: view(integration), webhookSecret });
 });
 

@@ -19,6 +19,7 @@
     "start:migrate": "node dist/migrate.js"
   },
   "dependencies": {
+    "@getbrevo/brevo": "^6.0.3",
     "@langchain/core": "^1.2.17",
     "@langchain/langgraph": "^1.4.21",
     "@langchain/langgraph-checkpoint-mongodb": "^1.4.2",

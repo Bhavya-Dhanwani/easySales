@@ -12,10 +12,15 @@ import { audit } from "../audit/audit.service.js";
 import { alert } from "../alerts/alert.service.js";
 
 type Evt = InstanceType<typeof ProviderEvent>;
-type Payload = { messageId?: string; from?: string; subject?: string; text?: string; inReplyTo?: string; references?: string[]; autoSubmitted?: boolean; providerMessageId?: string; bounceType?: "hard" | "soft" };
+type Payload = { messageId?: string; from?: string; subject?: string; text?: string; inReplyTo?: string; references?: string[]; autoSubmitted?: boolean; providerMessageId?: string; bounceType?: "hard" | "soft"; conversationId?: string };
 
 // finds the thread an inbound email belongs to: our Message-ID in its headers first, then the sender address
 export async function matchConversation(organizationId: mongoose.Types.ObjectId, p: Payload) {
+    // set by the platform reply inbox from a signed reply address; still scoped to this tenant
+    if (p.conversationId && mongoose.isValidObjectId(p.conversationId)) {
+        const known = await Conversation.findOne({ organizationId, _id: p.conversationId }, { _id: 1 }).lean();
+        if (known) return known._id;
+    }
     const ids = [p.inReplyTo, ...(p.references ?? [])].filter((v): v is string => Boolean(v));
     if (ids.length) {
         const replied = await Message.findOne({ organizationId, providerMessageId: { $in: ids } }, { conversationId: 1 }).lean();

@@ -18,7 +18,7 @@ const COPY: Record<string, [string, string]> = {
   business: ['What you sell', 'A short description and your services with prices. Proposals are priced only from this list.'],
   icp: ['Who you sell to', 'Industries, regions, company sizes or signals. Every lead is scored against this.'],
   voice: ['How you sound', 'Brand voice and the claims the agents may (and may never) make.'],
-  email: ['Your mailbox', 'Emails are sent from your own address. Connect and verify it.'],
+  email: ['Your mailbox', 'Send from your own address with an app password, or skip and send from easySales mail.'],
   limits: ['Your limits', 'Monthly spend, daily and hourly sending caps, and whether messages wait for your approval.'],
   test_run: ['A safe rehearsal', 'The agents research a sample lead and write the first email to you, and only you.'],
   activation: ['Go live', 'Nothing is sent to a real prospect until you activate.'],
