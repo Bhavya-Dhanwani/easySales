@@ -68,10 +68,18 @@ export function otpEmail(code: string, minutes: number) {
             body: `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr><td class="es-code" style="padding:14px;background:${C.forest};border-radius:18px;">
                 <table role="presentation" cellpadding="0" cellspacing="0" aria-label="Verification code ${escapeHtml(code.split("").join(" "))}"><tr>${digits}</tr></table>
               </td></tr></table>
-              <p style="margin:16px 0 0;text-align:center;font:600 13px ${FONT};color:${C.forest2};">Expires in ${minutes} minutes</p>`,
+              <p style="margin:16px 0 0;text-align:center;font:600 13px ${FONT};color:${C.forest2};">Expires in ${minutes} minutes</p>
+              <!-- email apps can't run a copy script: one tap selects the whole code (user-select: all), and the button fills it in for you -->
+              <table role="presentation" cellpadding="0" cellspacing="0" style="margin:22px auto 0;"><tr>
+                <td style="padding:0 10px 0 0;font:600 12px ${FONT};color:${C.muted};">Tap to copy</td>
+                <td class="es-copy" style="padding:9px 16px;border:2px dashed ${C.forest2};border-radius:12px;background:${C.paper};font:700 20px 'Geist Mono',Menlo,Consolas,monospace;letter-spacing:4px;color:${C.forest};-webkit-user-select:all;user-select:all;cursor:copy;">${escapeHtml(code)}</td>
+              </tr></table>
+              <table role="presentation" cellpadding="0" cellspacing="0" style="margin:18px auto 0;"><tr><td style="background:${C.lime};border-radius:999px;">
+                <a href="${escapeHtml(`${env.FRONTEND_URL.replace(/\/$/, "")}/verify#code=${code}`)}" style="display:inline-block;padding:12px 24px;font:700 14px ${FONT};color:${C.forest};text-decoration:none;">Verify in one click &rarr;</a>
+              </td></tr></table>`,
             footnote: "Didn't try to sign up? You can ignore this email; nothing happens without the code. Never share it with anyone, including us.",
         }),
-        text: `Your easySales verification code is ${code}. It expires in ${minutes} minutes. If you didn't try to sign up, ignore this email.`,
+        text: `Your easySales verification code is ${code}. It expires in ${minutes} minutes.\nOr verify in one click: ${env.FRONTEND_URL.replace(/\/$/, "")}/verify#code=${code}\nIf you didn't try to sign up, ignore this email.`,
     };
 }
 

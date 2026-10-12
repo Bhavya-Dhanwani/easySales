@@ -1,0 +1,88 @@
+/* 404: a lead radar on forest green. The digits tilt with the pointer, the "0" is a radar
+   with a rotating sweep, and lost leads blink on it to be rescued. */
+.nf {
+  --nf-bg: #0b2f23;
+  --nf-ink: #eaf2ec;
+  --nf-dim: #9fb8ab;
+  position: relative; min-height: 100vh; overflow: hidden;
+  background: radial-gradient(1200px 700px at 50% 35%, #145a43 0%, var(--nf-bg) 55%, #071f17 100%);
+  color: var(--nf-ink); display: flex; flex-direction: column; align-items: center;
+  padding: 22px 16px 40px; text-align: center;
+}
+.nf-grid {
+  position: absolute; inset: -50%; pointer-events: none; opacity: 0.22;
+  background-image: linear-gradient(rgba(200, 241, 105, 0.12) 1px, transparent 1px), linear-gradient(90deg, rgba(200, 241, 105, 0.12) 1px, transparent 1px);
+  background-size: 46px 46px; transform: perspective(700px) rotateX(58deg) translateY(-6%);
+  animation: nf-grid 9s linear infinite; mask-image: radial-gradient(closest-side, #000 40%, transparent);
+}
+@keyframes nf-grid { to { background-position: 0 46px, 46px 0; } }
+
+.nf-top { position: relative; z-index: 2; width: min(1100px, 100%); display: flex; justify-content: space-between; align-items: center; }
+.nf-logo { color: var(--nf-ink); text-decoration: none; }
+.nf-chip { display: inline-flex; align-items: center; gap: 8px; font: 600 12px var(--mono); color: var(--lime); border: 1px solid rgba(200, 241, 105, 0.35); padding: 6px 12px; border-radius: 999px; background: rgba(200, 241, 105, 0.07); }
+.nf-chip i { width: 7px; height: 7px; border-radius: 50%; background: var(--coral); box-shadow: 0 0 0 0 rgba(255, 122, 89, 0.7); animation: nf-ping 1.6s infinite; }
+@keyframes nf-ping { 70% { box-shadow: 0 0 0 9px rgba(255, 122, 89, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 122, 89, 0); } }
+
+.nf-hero { position: relative; z-index: 2; margin-top: clamp(28px, 8vh, 80px); perspective: 900px; }
+.nf-digits {
+  display: flex; align-items: center; gap: clamp(6px, 2vw, 22px);
+  transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)); transition: transform 0.25s ease-out; transform-style: preserve-3d;
+}
+.nf-d {
+  font: 800 clamp(120px, 26vw, 300px)/0.85 var(--display); letter-spacing: -0.06em; color: var(--lime);
+  text-shadow: 0 2px 0 #a6d43a, 0 4px 0 #8fbe2a, 0 8px 0 #6f9a1c, 0 22px 40px rgba(0, 0, 0, 0.45);
+  animation: nf-float 5s ease-in-out infinite; transform: translateZ(40px);
+}
+.nf-d2 { animation-delay: -2.5s; }
+@keyframes nf-float { 50% { translate: 0 -14px; } }
+
+.nf-radar {
+  position: relative; width: clamp(110px, 22vw, 250px); aspect-ratio: 1; border-radius: 50%;
+  background: radial-gradient(circle, rgba(200, 241, 105, 0.1), rgba(7, 31, 23, 0.9) 70%);
+  border: 3px solid var(--lime); box-shadow: 0 0 0 6px rgba(200, 241, 105, 0.12), 0 0 60px rgba(200, 241, 105, 0.25), inset 0 0 40px rgba(0, 0, 0, 0.6);
+  overflow: hidden; transform: translateZ(20px);
+}
+.nf-sweep { position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(from 0deg, rgba(200, 241, 105, 0.55), rgba(200, 241, 105, 0) 70deg, transparent 360deg); animation: nf-spin 2.6s linear infinite; }
+@keyframes nf-spin { to { transform: rotate(360deg); } }
+.nf-ring { position: absolute; border: 1px solid rgba(200, 241, 105, 0.3); border-radius: 50%; inset: 18%; }
+.nf-ring.r2 { inset: 34%; } .nf-ring.r3 { inset: 46%; background: var(--lime); border: 0; box-shadow: 0 0 14px var(--lime); }
+.nf-cross { position: absolute; inset: 0; background: linear-gradient(rgba(200, 241, 105, 0.22), rgba(200, 241, 105, 0.22)) center/1px 100% no-repeat, linear-gradient(90deg, rgba(200, 241, 105, 0.22), rgba(200, 241, 105, 0.22)) center/100% 1px no-repeat; }
+
+/* the blips layer covers the radar ("0") in the middle of the digits */
+.nf-blips { position: absolute; left: 50%; top: 50%; width: clamp(110px, 22vw, 250px); aspect-ratio: 1; transform: translate(-50%, -50%); z-index: 3; }
+.nf-blip {
+  position: absolute; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; border: 0; padding: 0; cursor: crosshair;
+  background: var(--coral); box-shadow: 0 0 0 0 rgba(255, 122, 89, 0.8), 0 0 14px var(--coral);
+  animation: nf-blip-in 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.4) both, nf-ping 1.2s 0.35s infinite, nf-fade 5s 0.2s forwards;
+}
+.nf-blip:hover, .nf-blip:focus-visible { transform: scale(1.35); outline: 2px solid var(--nf-ink); outline-offset: 3px; }
+@keyframes nf-blip-in { from { transform: scale(0); } to { transform: scale(1); } }
+@keyframes nf-fade { 85% { opacity: 1; } to { opacity: 0.15; } }
+.nf-pop { position: absolute; transform: translate(-50%, -50%); font: 800 14px var(--mono); color: var(--lime); white-space: nowrap; pointer-events: none; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6); animation: nf-popup 0.9s ease-out forwards; }
+@keyframes nf-popup { from { opacity: 1; translate: 0 0; scale: 0.8; } to { opacity: 0; translate: 0 -44px; scale: 1.3; } }
+
+.nf-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.nf-quip { position: relative; z-index: 2; margin: 34px 0 6px; font: 700 clamp(24px, 4.2vw, 40px)/1.15 var(--display); letter-spacing: -0.03em; min-height: 2.3em; max-width: 760px; }
+.nf-quip span { display: inline-block; animation: nf-quip 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+@keyframes nf-quip { from { opacity: 0; transform: translateY(14px) rotate(-2deg); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+.nf-path { position: relative; z-index: 2; margin: 0; color: var(--nf-dim); max-width: 640px; overflow-wrap: anywhere; }
+.nf-path code { font: 600 14px var(--mono); color: var(--nf-ink); background: rgba(255, 255, 255, 0.08); padding: 2px 8px; border-radius: 6px; }
+.nf-score { color: var(--lime); animation: nf-quip 0.4s both; display: inline-block; }
+
+.nf-actions { position: relative; z-index: 2; display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin: 26px 0 30px; }
+.nf-ghost { background: transparent; color: var(--nf-ink); border: 1px solid rgba(234, 242, 236, 0.35); }
+.nf-ghost:hover { background: rgba(234, 242, 236, 0.08); }
+
+.nf-log { position: relative; z-index: 2; width: min(620px, 100%); text-align: left; border-radius: 16px; overflow: hidden; background: rgba(4, 18, 13, 0.75); border: 1px solid rgba(200, 241, 105, 0.18); box-shadow: 0 30px 60px -30px rgba(0, 0, 0, 0.8); backdrop-filter: blur(6px); }
+.nf-log-bar { display: flex; align-items: center; gap: 6px; padding: 9px 12px; border-bottom: 1px solid rgba(200, 241, 105, 0.12); font: 600 12px var(--mono); color: var(--nf-dim); }
+.nf-log-bar i { width: 10px; height: 10px; border-radius: 50%; background: #ff5f57; } .nf-log-bar i:nth-child(2) { background: #febc2e; } .nf-log-bar i:nth-child(3) { background: #28c840; }
+.nf-log-bar span { margin-left: 8px; }
+.nf-log pre { margin: 0; padding: 14px 16px; min-height: 9.5em; font: 500 13px/1.6 var(--mono); color: #b9e6c9; white-space: pre-wrap; overflow-wrap: anywhere; }
+.nf-caret { color: var(--lime); animation: nf-blink 0.9s steps(1) infinite; }
+.nf-caret.idle { animation-duration: 1.2s; }
+@keyframes nf-blink { 50% { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .nf *, .nf *::before, .nf *::after { animation: none !important; transition: none !important; }
+  .nf-blip { opacity: 1; }
+}

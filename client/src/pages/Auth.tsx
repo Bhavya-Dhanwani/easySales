@@ -83,19 +83,40 @@ export function Signup() {
   )
 }
 
+/*
+    The email's "Verify in one click" button links to /verify#code=123456. The code is in the
+    fragment, which browsers never send to the server or put in logs. It waits in this tab's
+    session storage if the user has to log in first, and is removed once used.
+*/
+const PENDING = 'easysales.pending-code'
+function takeCodeFromLink() {
+  const fromLink = window.location.hash.match(/(?:^#|&)code=(\d{6})(?:&|$)/)?.[1]
+  try {
+    if (fromLink) {
+      sessionStorage.setItem(PENDING, fromLink)
+      history.replaceState(null, '', window.location.pathname + window.location.search)
+    }
+    return fromLink ?? sessionStorage.getItem(PENDING) ?? ''
+  } catch {
+    return fromLink ?? ''
+  }
+}
+const forgetPendingCode = () => { try { sessionStorage.removeItem(PENDING) } catch { /* storage unavailable */ } }
+
 export function Verify() {
   const { verify, user, ready } = useAuth()
   const nav = useNavigate()
   const toast = useToast()
-  const [otp, setOtp] = useState('')
+  const [otp, setOtp] = useState(takeCodeFromLink)
   const { busy, error, run } = useSubmit()
   if (ready && !user) return <Navigate to="/login" replace />
-  if (user?.isVerified) return <Navigate to="/app" replace />
+  if (user?.isVerified) { forgetPendingCode(); return <Navigate to="/app" replace /> }
   return (
     <Shell index="Verify email" title={<>Check your <span className="hl">inbox.</span></>}
       foot={<button className="linkish" onClick={() => api('/auth/resend-otp', { method: 'POST' }).then(() => toast('New code sent')).catch((e) => toast(e.message, true))}>Send a new code</button>}>
       <p className="muted" style={{ marginTop: -12 }}>We sent a 6-digit code to <b style={{ color: 'var(--ink)' }}>{user?.email}</b>.</p>
-      <form className="stack" onSubmit={run(async () => { await verify(otp); nav('/app/onboarding') })}>
+      {otp.length === 6 && <p className="small" style={{ margin: '-8px 0 0', color: 'var(--forest-2)' }}>Code filled in from your email. Press Verify.</p>}
+      <form className="stack" onSubmit={run(async () => { await verify(otp); forgetPendingCode(); nav('/app/onboarding') })}>
         <label className="field"><span>Code</span>
           <input className="input mono" style={{ fontSize: 22, letterSpacing: '0.4em', textAlign: 'center' }} inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" maxLength={6} required value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))} />
         </label>

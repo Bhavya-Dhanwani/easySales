@@ -105,6 +105,8 @@ test("account emails: the code is highlighted digit by digit, values are escaped
     assert.equal((otp.html.match(/class="es-digit es-digit-cell"/g) ?? []).length, 6, "one box per digit");
     assert.match(otp.html, /prefers-reduced-motion/, "motion respects the user's setting");
     assert.match(otp.text, /482913/);
+    assert.match(otp.html, /user-select:all;cursor:copy;">482913</, "one tap selects the whole code");
+    assert.match(otp.html, /\/verify#code=482913"/, "one-click verify keeps the code in the URL fragment (never sent to the server)");
     const invite = inviteEmail("Smile <script>x</script>", "member", "https://example.test/login");
     assert.doesNotMatch(invite.html, /<script>/, "business names cannot inject markup");
     assert.match(invite.html, /Smile &lt;script&gt;/);

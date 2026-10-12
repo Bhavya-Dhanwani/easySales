@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect } from 'react'
-import { Link, Route, Routes, useLocation } from 'react-router'
+import { Route, Routes, useLocation } from 'react-router'
 import { Forgot, Login, Reset, Signup, Verify } from './pages/Auth'
-import { Empty, Spinner } from './components/ui'
+import { Spinner } from './components/ui'
 
 // route-level code splitting: the landing page and the app load separately
 const Landing = lazy(() => import('./pages/Landing'))
@@ -18,6 +18,7 @@ const Campaigns = lazy(() => import('./app/Campaigns'))
 const Analytics = lazy(() => import('./app/Analytics'))
 const Billing = lazy(() => import('./app/Billing'))
 const Legal = lazy(() => import('./pages/Legal'))
+const NotFound = lazy(() => import('./pages/NotFound'))
 const Integrations = lazy(() => import('./app/Integrations'))
 const Experiments = lazy(() => import('./app/Analytics').then((m) => ({ default: m.Experiments })))
 const CampaignDetail = lazy(() => import('./app/Campaigns').then((m) => ({ default: m.CampaignDetail })))
@@ -84,7 +85,7 @@ export default function App() {
           <Route path="usage" element={<Usage />} />
           <Route path="ops" element={<Ops />} />
         </Route>
-        <Route path="*" element={<div style={{ padding: '15vh 16px' }}><Empty title="Nothing here." action={<Link className="btn" to="/">Go home</Link>} /></div>} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
       </Suspense>
     </>
