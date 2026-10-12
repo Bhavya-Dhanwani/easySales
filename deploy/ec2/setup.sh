@@ -73,6 +73,7 @@ if [ ! -f "$APP_ENV" ]; then
     setkv ENCRYPTION_KEY "$(openssl rand -hex 32)"
     setkv BILLING_WEBHOOK_SECRET "$(openssl rand -hex 24)"
     setkv RUN_WORKER false
+    setkv MONGO_URI "mongodb://mongodb:27017/easysales"
     [ -n "${ADMIN_EMAIL:-}" ] && setkv ADMIN_EMAILS "$ADMIN_EMAIL"
     NEEDS_EDIT=1
 fi
@@ -96,9 +97,25 @@ if [ -z "$ACME_EMAIL" ]; then echo "Set ADMIN_EMAILS (your email) in server/.env
 # kept in the compose env file: sudo does not pass exported variables through
 sed -i '/^ACME_EMAIL=/d' "$DEPLOY_ENV" && echo "ACME_EMAIL=$ACME_EMAIL" >> "$DEPLOY_ENV"
 
+# ---------- database: MongoDB Atlas when MONGO_URI is one, else the local container ----------
+MONGO=$(grep -E '^MONGO_URI=' "$APP_ENV" | cut -d= -f2- | tr -d '"' || true)
+if [ -z "$MONGO" ] || echo "$MONGO" | grep -qE '//(localhost|127\.0\.0\.1)[:/]'; then
+    setkv MONGO_URI "mongodb://mongodb:27017/easysales"; MONGO="mongodb://mongodb:27017/easysales"
+fi
+COMPOSE="sudo docker compose -f deploy/ec2/docker-compose.yml --env-file $DEPLOY_ENV"
+if echo "$MONGO" | grep -q '//mongodb:'; then
+    say "Database: local MongoDB container"
+    PROFILE="--profile localdb"
+else
+    say "Database: $(echo "$MONGO" | sed -E 's#^(mongodb(\+srv)?://)[^@]*@#\1***@#; s#\?.*##')"
+    PROFILE=""
+    # the local container is not needed; its data volume is kept as a backup
+    $COMPOSE --profile localdb stop mongodb >/dev/null 2>&1 || true
+fi
+
 # ---------- build and start ----------
 say "Building and starting (first build takes a few minutes)"
-sudo docker compose -f deploy/ec2/docker-compose.yml --env-file "$DEPLOY_ENV" up -d --build
+$COMPOSE $PROFILE up -d --build
 sudo docker image prune -f >/dev/null
 
 say "Waiting for HTTPS"
